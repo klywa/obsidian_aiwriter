@@ -35,6 +35,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const popupRef = useRef<HTMLDivElement>(null);
     const modelSelectorRef = useRef<HTMLDivElement>(null);
     const sessionsRef = useRef<Session[]>([]);
+    const lastUserMessageIdRef = useRef<string | null>(null);
     const prevSessionIdRef = useRef<string | null>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -259,24 +260,22 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     // 智能滚动逻辑
     useEffect(() => {
         if (messages.length === 0) return;
-        const lastMsg = messages[messages.length - 1];
-        if (!lastMsg) return;
         
         // 如果正在加载（发送消息过程中）
         if (isLoading) {
-            if (lastMsg.role === 'user' && lastMsg.id) {
-                // 新的用户消息：滚动到该消息顶部
-                // 使用 setTimeout 确保 DOM 已渲染
-                const msgId = lastMsg.id;
-                setTimeout(() => {
-                    const el = document.getElementById(msgId);
-                    if (el) {
-                        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    }
-                }, 50);
-            } else {
-                // 生成过程中，实时下拉聊天窗口，显示最新内容
-                scrollToBottom();
+            // 持续尝试将最新的用户消息置顶
+            // 使用 scrollTop 直接定位，比 scrollIntoView 更快且可控
+            // 下方预留了 Spacer，确保有足够空间滚动
+            if (lastUserMessageIdRef.current && messagesEndRef.current) {
+                const el = document.getElementById(lastUserMessageIdRef.current);
+                const container = messagesEndRef.current.parentElement;
+                
+                if (el && container) {
+                    // 计算目标滚动位置：元素位置 - 顶部留白(20px)
+                    // 这样可以避免元素紧贴窗口顶部，保留一点视觉呼吸空间，也不会被“顶掉”
+                    const targetTop = el.offsetTop - 20;
+                    container.scrollTop = targetTop;
+                }
             }
         } else {
             // 非加载状态（如切换 Session 或加载历史），滚动到底部
@@ -462,6 +461,8 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             referencedFiles: [...filesToSend]
         };
         
+        lastUserMessageIdRef.current = newUserMsg.id || null;
+
         console.log('Sending message:', messageContent);
         setMessages(prev => [...prev, newUserMsg]);
         if (!manualContent) setInputValue(''); // Only clear input if not manual (or handled elsewhere)
@@ -1241,7 +1242,8 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                 flex: 1, 
                 overflowY: 'auto', 
                 padding: '16px',
-                backgroundColor: 'var(--background-primary)'
+                backgroundColor: 'var(--background-primary)',
+                position: 'relative'
             }}>
                 {displayedMessages.map((item, i) => {
                     if ('messages' in item) { // Tool Group
@@ -1484,6 +1486,9 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     }
                 })}
                 <div ref={messagesEndRef} />
+                {isLoading && (
+                    <div style={{ height: '60vh', flexShrink: 0 }} />
+                )}
             </div>
 
             {/* Referenced Files Area */}
