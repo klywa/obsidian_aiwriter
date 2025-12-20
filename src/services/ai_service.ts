@@ -291,7 +291,7 @@ export class AIService {
                          output = `Error executing ${name}: ${e.message}`;
                      }
                      
-                     yield { type: "tool_result", tool: name, result: output };
+                     yield { type: "tool_result", tool: name, result: output, args: toolArgs };
                      
                      functionResponses.push({
                          functionResponse: {

@@ -2,8 +2,9 @@ import * as React from 'react';
 import { useState, useRef, useEffect } from 'react';
 import { AIService } from '../services/ai_service';
 import { FSService } from '../services/fs_service';
-import { SendIcon, StopIcon, PlusIcon, CloseIcon, CopyIcon, FileIcon, EditIcon, RefreshIcon, SaveIcon, UserIcon, BotIcon, ThinkingIcon, ToolIcon } from '../components/Icons';
+import { SendIcon, StopIcon, PlusIcon, CloseIcon, CopyIcon, FileIcon, EditIcon, RefreshIcon, SaveIcon, UserIcon, BotIcon, ThinkingIcon, ToolIcon, TrashIcon, CheckIcon, TextSizeIcon } from '../components/Icons';
 import { Message, Session } from '../settings';
+import { Notice, Menu } from 'obsidian';
 
 export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerEl?: HTMLElement }) => {
     const [sessions, setSessions] = useState<Session[]>([]);
@@ -22,6 +23,8 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const [selectedIndex, setSelectedIndex] = useState<number>(-1);
     const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
     const [editingSessionName, setEditingSessionName] = useState<string>('');
+    const [fontSize, setFontSize] = useState<number>(14);
+    const [showFontSizeControl, setShowFontSizeControl] = useState(false);
     
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -497,11 +500,13 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                         id: `msg-${Date.now()}-thinking`
                     }]);
                 } else if (chunk.type === 'tool_result') {
-                    // 立即更新tool_result消息
+                    // 立即更新tool_result消息，包含 args
                     setMessages(prev => [...prev, { 
                         role: 'model', 
                         content: `Tool ${chunk.tool} executed: ${chunk.result}`, 
                         type: 'tool_result',
+                        tool: chunk.tool,
+                        toolData: { result: chunk.result, args: chunk.args },
                         id: `msg-${Date.now()}-tool`
                     }]);
                 } else if (chunk.type === 'error') {
@@ -521,7 +526,6 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                 } else if (chunk.type === 'history_update') {
                     const updatedHistory = chunk.history;
                     setChatHistory(updatedHistory);
-                    // 注意：session的更新会通过useEffect自动同步，这里不需要手动更新
                 }
             }
 
@@ -560,8 +564,6 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                 }]);
             }
 
-            // 更新session的chatHistory和消息（在finally中更新，确保所有消息都已添加）
-            // 注意：这里使用setMessages的回调来获取最新状态
         } catch (e: any) {
             console.error('Error in handleSendMessage:', e);
             const errorMessage = e?.message || e?.toString() || "发生未知错误。";
@@ -658,148 +660,256 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         setEditingSessionId(null);
     };
 
-    const currentSession = sessions.find(s => s.id === currentSessionId);
+    const handleClearHistory = () => {
+        // 清空当前会话的消息和历史
+        setMessages([]);
+        setChatHistory([]);
+        // 同时更新sessions
+        setSessions(prev => prev.map(s => {
+            if (s.id === currentSessionId) {
+                return { ...s, messages: [], chatHistory: [] };
+            }
+            return s;
+        }));
+        new Notice('聊天历史已清空');
+    };
+
+    const handleCopy = (content: string) => {
+        navigator.clipboard.writeText(content);
+        new Notice('已复制到剪贴板');
+    };
+
+    const handleCopyToNote = (content: string) => {
+        // 获取当前活动的 Markdown view
+        const activeLeaf = plugin.app.workspace.activeLeaf;
+        if (activeLeaf && activeLeaf.view && activeLeaf.view.getViewType() === "markdown") {
+             const editor = activeLeaf.view.editor;
+             if (editor) {
+                 editor.replaceSelection(content);
+                 new Notice('已插入到当前笔记');
+             }
+        } else {
+            new Notice('请先打开一个 Markdown 笔记');
+        }
+    };
+
+    // 预处理消息，合并连续的工具调用
+    const processMessages = (msgs: Message[]) => {
+        const result: (Message | { type: 'tool_group', messages: Message[], id: string })[] = [];
+        let currentGroup: Message[] = [];
+
+        for (let i = 0; i < msgs.length; i++) {
+            const m = msgs[i];
+            if (!m) continue;
+
+            if (m.type === 'tool_result' && m.tool !== 'writeFile') { // writeFile 单独展示，不折叠
+                currentGroup.push(m);
+            } else {
+                // 如果当前有堆积的group，先push
+                if (currentGroup.length > 0) {
+                    const firstMsg = currentGroup[0];
+                    if (firstMsg && firstMsg.id) {
+                        result.push({
+                            type: 'tool_group',
+                            messages: [...currentGroup],
+                            id: `group-${firstMsg.id}`
+                        });
+                    }
+                    currentGroup = [];
+                }
+                result.push(m);
+            }
+        }
+        // 处理最后的group
+        if (currentGroup.length > 0) {
+            const firstMsg = currentGroup[0];
+            if (firstMsg && firstMsg.id) {
+                result.push({
+                    type: 'tool_group',
+                    messages: [...currentGroup],
+                    id: `group-${firstMsg.id}`
+                });
+            }
+        }
+        return result;
+    };
+
+    const displayedMessages = processMessages(messages);
 
     return (
         <div className="voyaru-chat-container" style={{ 
             display: 'flex', 
             flexDirection: 'column', 
             height: '100%',
-            backgroundColor: 'var(--background-primary)'
+            backgroundColor: 'var(--background-primary)',
+            fontSize: `${fontSize}px`
         }}>
-            {/* Session Tabs */}
-            <div className="voyaru-session-tabs" style={{ 
-                display: 'flex', 
-                gap: '6px', 
-                padding: '10px 12px', 
+            {/* Header / Session Tabs */}
+            <div className="voyaru-header" style={{
+                display: 'flex',
+                alignItems: 'center',
+                padding: '10px 12px',
+                gap: '8px',
                 borderBottom: '1px solid var(--background-modifier-border)',
-                overflowX: 'auto',
-                flexShrink: 0,
-                backgroundColor: 'var(--background-secondary-alt)'
+                backgroundColor: 'var(--background-secondary-alt)',
+                flexShrink: 0
             }}>
-                {sessions.map(session => (
-                    <div
-                        key={session.id}
+                 <div className="voyaru-session-tabs" style={{ 
+                    display: 'flex', 
+                    gap: '6px', 
+                    overflowX: 'auto',
+                    flex: 1,
+                    scrollbarWidth: 'none'
+                }}>
+                    {sessions.map(session => (
+                        <div
+                            key={session.id}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '6px 12px',
+                                borderRadius: '12px', // Rounded
+                                backgroundColor: currentSessionId === session.id 
+                                    ? 'var(--interactive-accent)' 
+                                    : 'var(--background-primary)',
+                                color: currentSessionId === session.id 
+                                    ? 'var(--text-on-accent)' 
+                                    : 'var(--text-normal)',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                                whiteSpace: 'nowrap',
+                                minWidth: '60px',
+                                transition: 'all 0.2s ease',
+                                border: currentSessionId === session.id 
+                                    ? 'none' 
+                                    : '1px solid var(--background-modifier-border)'
+                            }}
+                            onClick={() => setCurrentSessionId(session.id)}
+                            onDoubleClick={() => {
+                                setEditingSessionId(session.id);
+                                setEditingSessionName(session.name);
+                            }}
+                        >
+                            {editingSessionId === session.id ? (
+                                <input
+                                    type="text"
+                                    value={editingSessionName}
+                                    onChange={(e) => setEditingSessionName(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            renameSession(session.id, editingSessionName);
+                                        } else if (e.key === 'Escape') {
+                                            setEditingSessionId(null);
+                                        }
+                                    }}
+                                    onBlur={() => renameSession(session.id, editingSessionName)}
+                                    autoFocus
+                                    style={{
+                                        border: '1px solid var(--interactive-accent)',
+                                        borderRadius: '6px',
+                                        padding: '2px 6px',
+                                        fontSize: '12px',
+                                        width: '100px',
+                                        backgroundColor: 'var(--background-primary)',
+                                        color: 'var(--text-normal)'
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                />
+                            ) : (
+                                <>
+                                    <span style={{ maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{session.name}</span>
+                                    <div
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            deleteSession(session.id);
+                                        }}
+                                        style={{ cursor: 'pointer', opacity: 0.7 }}
+                                    >
+                                        <CloseIcon size={12} />
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    ))}
+                    <button
+                        onClick={createNewSession}
                         style={{
+                            padding: '6px',
+                            borderRadius: '12px',
+                            border: '1px solid var(--background-modifier-border)',
+                            backgroundColor: 'var(--background-primary)',
+                            cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '6px',
-                            padding: '6px 12px',
-                            borderRadius: '8px',
-                            backgroundColor: currentSessionId === session.id 
-                                ? 'var(--interactive-accent)' 
-                                : 'var(--background-primary)',
-                            color: currentSessionId === session.id 
-                                ? 'var(--text-on-accent)' 
-                                : 'var(--text-normal)',
-                            cursor: 'pointer',
-                            fontSize: '13px',
-                            whiteSpace: 'nowrap',
-                            minWidth: '60px',
-                            transition: 'all 0.2s ease',
-                            border: currentSessionId === session.id 
-                                ? 'none' 
-                                : '1px solid var(--background-modifier-border)'
-                        }}
-                        onClick={() => setCurrentSessionId(session.id)}
-                        onDoubleClick={() => {
-                            setEditingSessionId(session.id);
-                            setEditingSessionName(session.name);
-                        }}
-                        onMouseEnter={(e) => {
-                            if (currentSessionId !== session.id) {
-                                e.currentTarget.style.backgroundColor = 'var(--background-modifier-hover)';
-                            }
-                        }}
-                        onMouseLeave={(e) => {
-                            if (currentSessionId !== session.id) {
-                                e.currentTarget.style.backgroundColor = 'var(--background-primary)';
-                            }
+                            justifyContent: 'center',
+                            color: 'var(--text-normal)'
                         }}
                     >
-                        {editingSessionId === session.id ? (
-                            <input
-                                type="text"
-                                value={editingSessionName}
-                                onChange={(e) => setEditingSessionName(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                        renameSession(session.id, editingSessionName);
-                                    } else if (e.key === 'Escape') {
-                                        setEditingSessionId(null);
-                                    }
-                                }}
-                                onBlur={() => renameSession(session.id, editingSessionName)}
-                                autoFocus
-                                style={{
-                                    border: '1px solid var(--interactive-accent)',
-                                    borderRadius: '6px',
-                                    padding: '2px 6px',
-                                    fontSize: '13px',
-                                    width: '120px',
-                                    backgroundColor: 'var(--background-primary)',
-                                    color: 'var(--text-normal)'
-                                }}
-                                onClick={(e) => e.stopPropagation()}
-                            />
-                        ) : (
-                            <>
-                                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{session.name}</span>
-                                <div
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        deleteSession(session.id);
-                                    }}
-                                    style={{
-                                        cursor: 'pointer',
-                                        padding: '2px',
-                                        borderRadius: '4px',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        opacity: 0.7,
-                                        transition: 'opacity 0.2s ease'
-                                    }}
-                                    onMouseEnter={(e) => {
-                                        e.currentTarget.style.opacity = '1';
-                                        e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.1)';
-                                    }}
-                                    onMouseLeave={(e) => {
-                                        e.currentTarget.style.opacity = '0.7';
-                                        e.currentTarget.style.backgroundColor = 'transparent';
-                                    }}
-                                >
-                                    <CloseIcon size={14} />
-                                </div>
-                            </>
+                        <PlusIcon size={14} />
+                    </button>
+                </div>
+
+                {/* Toolbar Buttons */}
+                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                     {/* Font Size Control */}
+                     <div style={{ position: 'relative' }}>
+                        <button 
+                            className="clickable-icon"
+                            onClick={() => setShowFontSizeControl(!showFontSizeControl)}
+                            style={{ 
+                                padding: '6px', 
+                                background: 'transparent', 
+                                border: 'none', 
+                                color: 'var(--text-muted)',
+                                cursor: 'pointer' 
+                            }}
+                            title="调整字体大小"
+                        >
+                            <TextSizeIcon size={16} />
+                        </button>
+                        {showFontSizeControl && (
+                            <div style={{
+                                position: 'absolute',
+                                top: '100%',
+                                right: 0,
+                                backgroundColor: 'var(--background-primary)',
+                                border: '1px solid var(--background-modifier-border)',
+                                borderRadius: '8px',
+                                padding: '8px',
+                                zIndex: 1000,
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px'
+                            }}>
+                                <button onClick={() => setFontSize(s => Math.max(12, s - 1))} style={{ padding: '4px 8px' }}>-</button>
+                                <span style={{ fontSize: '12px', minWidth: '24px', textAlign: 'center' }}>{fontSize}</span>
+                                <button onClick={() => setFontSize(s => Math.min(24, s + 1))} style={{ padding: '4px 8px' }}>+</button>
+                            </div>
                         )}
                     </div>
-                ))}
-                <button
-                    onClick={createNewSession}
-                    style={{
-                        padding: '6px',
-                        borderRadius: '8px',
-                        border: '1px solid var(--background-modifier-border)',
-                        backgroundColor: 'var(--background-primary)',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        transition: 'all 0.2s ease',
-                        color: 'var(--text-normal)'
-                    }}
-                    onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = 'var(--background-modifier-hover)';
-                        e.currentTarget.style.borderColor = 'var(--interactive-accent)';
-                    }}
-                    onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = 'var(--background-primary)';
-                        e.currentTarget.style.borderColor = 'var(--background-modifier-border)';
-                    }}
-                >
-                    <PlusIcon size={16} />
-                </button>
+                    {/* Clear History */}
+                    <button 
+                        className="clickable-icon"
+                        onClick={() => {
+                            // Simple confirm logic could be added here, but direct action is faster as per request
+                            if (window.confirm("确定要清空当前对话历史吗？此操作无法撤销。")) {
+                                handleClearHistory();
+                            }
+                        }}
+                        style={{ 
+                            padding: '6px', 
+                            background: 'transparent', 
+                            border: 'none', 
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer' 
+                        }}
+                        title="清空历史"
+                    >
+                        <TrashIcon size={16} />
+                    </button>
+                </div>
             </div>
 
             {/* Messages */}
@@ -809,116 +919,192 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                 padding: '16px',
                 backgroundColor: 'var(--background-primary)'
             }}>
-                {messages.map((m, i) => (
-                    <div 
-                        key={m.id || i} 
-                        id={m.id}
-                        className={`voyaru-message voyaru-message-${m.role}`} 
-                        style={{ 
-                            marginBottom: '16px',
-                            display: 'flex',
-                            gap: '12px',
-                            alignItems: 'flex-start'
-                        }}
-                    >
-                        {/* Avatar */}
-                        <div style={{
-                            width: '32px',
-                            height: '32px',
-                            borderRadius: '8px',
-                            backgroundColor: m.role === 'user' 
-                                ? 'var(--interactive-accent)' 
-                                : m.role === 'error'
-                                ? 'var(--text-error)'
-                                : 'var(--background-secondary)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0,
-                            color: m.role === 'user' ? 'var(--text-on-accent)' : m.role === 'error' ? 'var(--text-on-accent)' : 'var(--text-normal)'
-                        }}>
-                            {m.role === 'user' ? <UserIcon size={18} /> : m.role === 'error' ? '⚠️' : <BotIcon size={18} />}
-                        </div>
-                        
-                        {/* Message Content */}
-                        <div style={{
-                            flex: 1,
-                            minWidth: 0
-                        }}>
-                            <div style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                marginBottom: '6px'
-                            }}>
-                                <span style={{
-                                    fontWeight: 600,
-                                    fontSize: '14px',
-                                    color: m.role === 'error' ? 'var(--text-error)' : 'var(--text-normal)'
+                {displayedMessages.map((item, i) => {
+                    if ('messages' in item) { // Tool Group
+                        const group = item as { type: 'tool_group', messages: Message[], id: string };
+                        return (
+                            <div key={group.id} style={{ marginBottom: '16px', padding: '0 44px' }}>
+                                <div style={{
+                                    fontSize: '12px',
+                                    color: 'var(--text-muted)',
+                                    backgroundColor: 'var(--background-primary-alt)',
+                                    padding: '8px 12px',
+                                    borderRadius: '8px',
+                                    border: '1px solid var(--background-modifier-border)',
+                                    cursor: 'pointer', // Could act as accordion later
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px'
                                 }}>
-                                    {m.role === 'user' ? '你' : m.role === 'error' ? '错误' : 'Voyaru'}
-                                </span>
-                                {m.type === 'thinking' && (
+                                    <ToolIcon size={12} />
+                                    <span>Executed {group.messages.length} tools...</span>
+                                </div>
+                            </div>
+                        );
+                    } else { // Single Message
+                        const m = item as Message;
+                        if (m.type === 'tool_result' && m.tool === 'writeFile') {
+                             // Render WriteFile Card
+                             const args = m.toolData?.args || {};
+                             const content = args.content || "";
+                             const path = args.path || "Untitled";
+                             const wordCount = content.length; // Approximate char count
+                             
+                             return (
+                                <div key={m.id || i} style={{ marginBottom: '16px', display: 'flex', justifyContent: 'flex-start', paddingLeft: '44px' }}>
+                                    <div style={{
+                                        border: '1px solid var(--background-modifier-border)',
+                                        borderRadius: '12px',
+                                        backgroundColor: 'var(--background-secondary)',
+                                        width: '240px',
+                                        overflow: 'hidden',
+                                        transition: 'transform 0.2s ease',
+                                        cursor: 'pointer'
+                                    }}
+                                    onClick={async () => {
+                                        await plugin.app.workspace.openLinkText(path, '', true);
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+                                    onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+                                    >
+                                        <div style={{
+                                            padding: '12px',
+                                            borderBottom: '1px solid var(--background-modifier-border)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            fontWeight: 600
+                                        }}>
+                                            <FileIcon size={16} />
+                                            <span style={{ fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{path}</span>
+                                        </div>
+                                        <div style={{ padding: '12px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                                            <div>Writing to file...</div>
+                                            <div style={{ marginTop: '4px' }}>{wordCount} characters</div>
+                                        </div>
+                                    </div>
+                                </div>
+                             );
+                        }
+
+                        // Normal Message (Text, Thinking, Error)
+                        return (
+                            <div 
+                                key={m.id || i} 
+                                id={m.id}
+                                className={`voyaru-message voyaru-message-${m.role}`} 
+                                style={{ 
+                                    marginBottom: '16px',
+                                    display: 'flex',
+                                    gap: '12px',
+                                    alignItems: 'flex-start'
+                                }}
+                            >
+                                {/* Avatar */}
+                                <div style={{
+                                    width: '32px',
+                                    height: '32px',
+                                    borderRadius: '10px', // More rounded
+                                    backgroundColor: m.role === 'user' 
+                                        ? 'var(--interactive-accent)' 
+                                        : m.role === 'error'
+                                        ? 'var(--text-error)'
+                                        : 'var(--background-secondary)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    flexShrink: 0,
+                                    color: m.role === 'user' ? 'var(--text-on-accent)' : m.role === 'error' ? 'var(--text-on-accent)' : 'var(--text-normal)'
+                                }}>
+                                    {m.role === 'user' ? <UserIcon size={18} /> : m.role === 'error' ? '⚠️' : <BotIcon size={18} />}
+                                </div>
+                                
+                                {/* Message Content & Actions */}
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    {/* Name & Status */}
                                     <div style={{
                                         display: 'flex',
                                         alignItems: 'center',
-                                        gap: '4px',
-                                        color: 'var(--text-muted)',
-                                        fontSize: '12px'
+                                        gap: '8px',
+                                        marginBottom: '6px'
                                     }}>
-                                        <ThinkingIcon size={14} />
-                                        <span>思考中</span>
+                                        <span style={{
+                                            fontWeight: 600,
+                                            fontSize: '0.9em',
+                                            color: m.role === 'error' ? 'var(--text-error)' : 'var(--text-normal)'
+                                        }}>
+                                            {m.role === 'user' ? '你' : m.role === 'error' ? '错误' : 'Voyaru'}
+                                        </span>
+                                        {m.type === 'thinking' && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-muted)', fontSize: '0.8em' }}>
+                                                <ThinkingIcon size={12} />
+                                                <span>思考中</span>
+                                            </div>
+                                        )}
                                     </div>
-                                )}
-                                {m.type === 'tool_result' && (
+
+                                    {/* Bubble */}
                                     <div style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '4px',
-                                        color: 'var(--text-muted)',
-                                        fontSize: '12px'
+                                        padding: '12px 16px',
+                                        borderRadius: '12px', // Rounded
+                                        backgroundColor: m.role === 'user' 
+                                            ? 'var(--interactive-accent)' 
+                                            : m.role === 'error'
+                                            ? 'var(--background-modifier-error)'
+                                            : 'var(--background-secondary)',
+                                        color: m.role === 'user' 
+                                            ? 'var(--text-on-accent)' 
+                                            : m.role === 'error'
+                                            ? 'var(--text-error)'
+                                            : 'var(--text-normal)',
+                                        border: m.type === 'thinking' 
+                                            ? '1px dashed var(--background-modifier-border)' 
+                                            : m.role === 'error'
+                                            ? '1px solid var(--text-error)'
+                                            : 'none',
+                                        userSelect: 'text',
+                                        whiteSpace: 'pre-wrap',
+                                        wordBreak: 'break-word',
+                                        fontSize: '1em',
+                                        lineHeight: '1.6',
+                                        boxShadow: '0 1px 2px rgba(0,0,0,0.05)' // Flat-ish shadow
                                     }}>
-                                        <ToolIcon size={14} />
-                                        <span>工具执行</span>
+                                        {m.content}
                                     </div>
-                                )}
+
+                                    {/* Action Bar (Only for Model Text messages) */}
+                                    {m.role === 'model' && m.type === 'text' && (
+                                        <div style={{
+                                            display: 'flex',
+                                            gap: '8px',
+                                            marginTop: '6px',
+                                            opacity: 0.6,
+                                            transition: 'opacity 0.2s',
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                                        onMouseLeave={e => e.currentTarget.style.opacity = '0.6'}
+                                        >
+                                            <button className="clickable-icon" onClick={() => handleCopy(m.content)} title="复制" style={{ background: 'none', border: 'none', padding: '4px', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                                                <CopyIcon size={14} />
+                                            </button>
+                                            <button className="clickable-icon" onClick={() => handleCopyToNote(m.content)} title="插入到笔记" style={{ background: 'none', border: 'none', padding: '4px', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                                                <EditIcon size={14} />
+                                            </button>
+                                            {/* Log/Debug button could be added here if needed */}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                            <div style={{
-                                padding: '12px 16px',
-                                borderRadius: '12px',
-                                backgroundColor: m.role === 'user' 
-                                    ? 'var(--interactive-accent)' 
-                                    : m.role === 'error'
-                                    ? 'var(--background-modifier-error)'
-                                    : 'var(--background-secondary)',
-                                color: m.role === 'user' 
-                                    ? 'var(--text-on-accent)' 
-                                    : m.role === 'error'
-                                    ? 'var(--text-error)'
-                                    : 'var(--text-normal)',
-                                border: m.type === 'thinking' 
-                                    ? '1px dashed var(--background-modifier-border)' 
-                                    : m.role === 'error'
-                                    ? '1px solid var(--text-error)'
-                                    : 'none',
-                                userSelect: 'text',
-                                whiteSpace: 'pre-wrap',
-                                wordBreak: 'break-word',
-                                fontSize: '14px',
-                                lineHeight: '1.6'
-                            }}>
-                                {m.content}
-                            </div>
-                        </div>
-                    </div>
-                ))}
+                        );
+                    }
+                })}
                 <div ref={messagesEndRef} />
             </div>
 
-            {/* Referenced Files */}
+            {/* Referenced Files Area */}
             {referencedFiles.length > 0 && (
                 <div className="voyaru-context-files" style={{ 
-                    padding: '10px 16px', 
+                    padding: '8px 16px', 
                     borderTop: '1px solid var(--background-modifier-border)',
                     backgroundColor: 'var(--background-secondary-alt)',
                     display: 'flex',
@@ -926,76 +1112,30 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     gap: '6px',
                     alignItems: 'center'
                 }}>
-                    <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        fontSize: '12px',
-                        color: 'var(--text-muted)',
-                        marginRight: '4px'
-                    }}>
-                        <FileIcon size={14} />
-                        <span>引用文件:</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8em', color: 'var(--text-muted)' }}>
+                        <FileIcon size={12} />
+                        <span>引用:</span>
                     </div>
                     {referencedFiles.map(f => {
                         const filePath = f.split(':')[0];
-                        const lineInfo = f.includes(':') ? f.split(':')[1] : null;
                         return (
                             <div
                                 key={f}
                                 style={{ 
                                     display: 'inline-flex',
                                     alignItems: 'center',
-                                    gap: '6px',
+                                    gap: '4px',
                                     background: 'var(--background-primary)', 
-                                    padding: '4px 10px', 
-                                    borderRadius: '8px',
-                                    cursor: 'pointer',
+                                    padding: '2px 8px', 
+                                    borderRadius: '6px',
                                     border: '1px solid var(--background-modifier-border)',
-                                    fontSize: '12px',
-                                    transition: 'all 0.2s ease'
-                                }}
-                                onClick={async () => {
-                                    const file = plugin.app.vault.getAbstractFileByPath(filePath);
-                                    if (file) {
-                                        await plugin.app.workspace.openLinkText(filePath, '', true);
-                                    }
-                                }}
-                                onMouseEnter={(e) => {
-                                    e.currentTarget.style.backgroundColor = 'var(--background-modifier-hover)';
-                                    e.currentTarget.style.borderColor = 'var(--interactive-accent)';
-                                }}
-                                onMouseLeave={(e) => {
-                                    e.currentTarget.style.backgroundColor = 'var(--background-primary)';
-                                    e.currentTarget.style.borderColor = 'var(--background-modifier-border)';
+                                    fontSize: '0.8em',
+                                    cursor: 'pointer'
                                 }}
                             >
-                                <FileIcon size={12} />
                                 <span>{filePath}</span>
-                                {lineInfo && <span style={{ color: 'var(--text-muted)' }}>({lineInfo})</span>}
-                                <div
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        setReferencedFiles(prev => prev.filter(x => x !== f));
-                                    }}
-                                    style={{
-                                        padding: '2px',
-                                        borderRadius: '4px',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        opacity: 0.6,
-                                        transition: 'opacity 0.2s ease'
-                                    }}
-                                    onMouseEnter={(e) => {
-                                        e.currentTarget.style.opacity = '1';
-                                        e.currentTarget.style.backgroundColor = 'var(--background-modifier-border)';
-                                    }}
-                                    onMouseLeave={(e) => {
-                                        e.currentTarget.style.opacity = '0.6';
-                                        e.currentTarget.style.backgroundColor = 'transparent';
-                                    }}
-                                >
-                                    <CloseIcon size={12} />
+                                <div onClick={() => setReferencedFiles(prev => prev.filter(x => x !== f))} style={{ cursor: 'pointer', marginLeft: '4px' }}>
+                                    <CloseIcon size={10} />
                                 </div>
                             </div>
                         );
@@ -1010,169 +1150,96 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                 borderTop: '1px solid var(--background-modifier-border)',
                 backgroundColor: 'var(--background-secondary-alt)'
             }}>
-                {/* Tools Popup */}
-                {showTools && filteredTools.length > 0 && (
-                    <div 
+                 {/* ... Popups ... */}
+                 {/* (Keeping existing popup logic but styled nicely) */}
+                 {(showTools || showFiles) && (
+                     <div 
                         ref={popupRef}
                         className="voyaru-popup" 
                         style={{ 
                             position: 'absolute', 
                             bottom: '100%', 
-                            left: 0, 
+                            left: 16, right: 16,
                             background: 'var(--background-primary)', 
                             border: '1px solid var(--background-modifier-border)',
                             borderRadius: '12px',
-                            maxHeight: '240px', 
+                            maxHeight: '200px', 
                             overflowY: 'auto', 
-                            width: '100%', 
-                            zIndex: 1000,
                             marginBottom: '8px',
-                            boxShadow: '0 4px 16px rgba(0,0,0,0.15)'
+                            boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+                            zIndex: 1000
                         }}
                     >
-                        {filteredTools.map((t, idx) => (
-                            <div 
+                        {showTools ? filteredTools.map((t, idx) => (
+                             <div 
                                 key={t.name} 
                                 onClick={() => insertTool(t)} 
                                 style={{ 
-                                    padding: '10px 14px', 
+                                    padding: '8px 12px', 
                                     cursor: 'pointer', 
-                                    borderBottom: idx < filteredTools.length - 1 ? '1px solid var(--background-modifier-border)' : 'none',
                                     backgroundColor: selectedIndex === idx ? 'var(--background-modifier-hover)' : 'transparent',
-                                    borderRadius: idx === 0 ? '12px 12px 0 0' : idx === filteredTools.length - 1 ? '0 0 12px 12px' : '0',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '8px',
-                                    transition: 'background-color 0.15s ease'
+                                    display: 'flex', alignItems: 'center', gap: '8px'
                                 }}
                             >
-                                <ToolIcon size={16} />
-                                <span style={{ fontWeight: 500 }}>{t.name}</span>
+                                <ToolIcon size={14} />
+                                <span style={{ fontSize: '0.9em' }}>{t.name}</span>
                             </div>
-                        ))}
-                    </div>
-                )}
-                
-                {/* Files Popup */}
-                {showFiles && filteredFiles.length > 0 && (
-                    <div 
-                        ref={popupRef}
-                        className="voyaru-popup" 
-                        style={{ 
-                            position: 'absolute', 
-                            bottom: '100%', 
-                            left: 0, 
-                            background: 'var(--background-primary)', 
-                            border: '1px solid var(--background-modifier-border)',
-                            borderRadius: '12px',
-                            maxHeight: '240px', 
-                            overflowY: 'auto', 
-                            width: '100%', 
-                            zIndex: 1000,
-                            marginBottom: '8px',
-                            boxShadow: '0 4px 16px rgba(0,0,0,0.15)'
-                        }}
-                    >
-                        {filteredFiles.map((f, idx) => (
+                        )) : filteredFiles.map((f, idx) => (
                             <div 
                                 key={f} 
                                 onClick={() => insertFile(f)} 
                                 style={{ 
-                                    padding: '10px 14px', 
+                                    padding: '8px 12px', 
                                     cursor: 'pointer', 
-                                    borderBottom: idx < filteredFiles.length - 1 ? '1px solid var(--background-modifier-border)' : 'none',
                                     backgroundColor: selectedIndex === idx ? 'var(--background-modifier-hover)' : 'transparent',
-                                    borderRadius: idx === 0 ? '12px 12px 0 0' : idx === filteredFiles.length - 1 ? '0 0 12px 12px' : '0',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '8px',
-                                    transition: 'background-color 0.15s ease'
+                                    display: 'flex', alignItems: 'center', gap: '8px'
                                 }}
                             >
-                                <FileIcon size={16} />
-                                <span>{f}</span>
+                                <FileIcon size={14} />
+                                <span style={{ fontSize: '0.9em' }}>{f}</span>
                             </div>
                         ))}
                     </div>
-                )}
+                 )}
 
-                <div style={{
-                    display: 'flex',
-                    gap: '8px',
-                    alignItems: 'flex-end'
-                }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
                     <textarea 
                         ref={inputRef}
                         value={inputValue}
                         onChange={handleInputChange}
                         onKeyDown={handleKeyDown}
-                        placeholder="向 Voyaru 提问... (#工具, @文件)"
+                        placeholder="向 Voyaru 提问..."
                         style={{ 
                             flex: 1,
-                            minHeight: '60px', 
-                            maxHeight: '200px',
-                            resize: 'vertical',
-                            padding: '12px 16px',
+                            minHeight: '48px', 
+                            maxHeight: '160px',
+                            resize: 'none',
+                            padding: '10px 14px',
                             borderRadius: '12px',
                             border: '1px solid var(--background-modifier-border)',
                             fontFamily: 'inherit',
-                            fontSize: '14px',
+                            fontSize: 'inherit',
                             backgroundColor: 'var(--background-primary)',
                             color: 'var(--text-normal)',
-                            transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
                             lineHeight: '1.5'
-                        }}
-                        onFocus={(e) => {
-                            e.target.style.borderColor = 'var(--interactive-accent)';
-                            e.target.style.boxShadow = '0 0 0 2px rgba(var(--interactive-accent-rgb), 0.1)';
-                        }}
-                        onBlur={(e) => {
-                            e.target.style.borderColor = 'var(--background-modifier-border)';
-                            e.target.style.boxShadow = 'none';
                         }}
                     />
                     <button 
                         onClick={handleSendMessage} 
                         disabled={isLoading} 
                         style={{ 
-                            padding: '12px 20px',
+                            padding: '10px',
                             borderRadius: '12px',
                             border: 'none',
-                            backgroundColor: isLoading 
-                                ? 'var(--background-modifier-border)' 
-                                : 'var(--interactive-accent)',
-                            color: isLoading 
-                                ? 'var(--text-muted)' 
-                                : 'var(--text-on-accent)',
+                            backgroundColor: isLoading ? 'var(--background-modifier-border)' : 'var(--interactive-accent)',
+                            color: isLoading ? 'var(--text-muted)' : 'var(--text-on-accent)',
                             cursor: isLoading ? 'not-allowed' : 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            transition: 'all 0.2s ease',
-                            minWidth: '48px',
-                            height: '48px'
-                        }}
-                        onMouseEnter={(e) => {
-                            if (!isLoading) {
-                                e.currentTarget.style.transform = 'scale(1.05)';
-                                e.currentTarget.style.boxShadow = '0 2px 8px rgba(var(--interactive-accent-rgb), 0.3)';
-                            }
-                        }}
-                        onMouseLeave={(e) => {
-                            e.currentTarget.style.transform = 'scale(1)';
-                            e.currentTarget.style.boxShadow = 'none';
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            height: '42px', width: '42px'
                         }}
                     >
-                        {isLoading ? <StopIcon size={20} /> : <SendIcon size={20} />}
+                        {isLoading ? <StopIcon size={18} /> : <SendIcon size={18} />}
                     </button>
-                </div>
-                <div style={{
-                    marginTop: '8px',
-                    fontSize: '11px',
-                    color: 'var(--text-muted)',
-                    textAlign: 'center'
-                }}>
-                    Enter 发送, Shift+Enter 换行, Ctrl+Enter 强制发送
                 </div>
             </div>
         </div>

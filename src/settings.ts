@@ -13,6 +13,7 @@ export interface Message {
     content: string;
     type?: 'text' | 'thinking' | 'tool_result';
     tool?: string;
+    toolData?: any; // To store args, result, etc.
     id?: string;
     referencedFiles?: string[];
 }
