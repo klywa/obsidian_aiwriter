@@ -3,9 +3,11 @@ import { App, Modal, Setting } from "obsidian";
 export class LocalEditModal extends Modal {
     private onSubmit: (query: string) => void;
     private query: string = "";
+    private selectedText: string;
 
-    constructor(app: App, onSubmit: (query: string) => void) {
+    constructor(app: App, selectedText: string, onSubmit: (query: string) => void) {
         super(app);
+        this.selectedText = selectedText;
         this.onSubmit = onSubmit;
     }
 
@@ -15,6 +17,31 @@ export class LocalEditModal extends Modal {
         contentEl.addClass("local-edit-modal");
 
         contentEl.createEl("h2", { text: "局部修改" });
+
+        // 展示被框选的文字
+        const maxLength = 300;
+        const displayContent = this.selectedText.length > maxLength 
+            ? this.selectedText.substring(0, maxLength) + "..." 
+            : this.selectedText;
+
+        const previewContainer = contentEl.createDiv({ cls: "local-edit-preview" });
+        previewContainer.style.marginBottom = "15px";
+        previewContainer.style.padding = "10px";
+        previewContainer.style.backgroundColor = "var(--background-secondary)";
+        previewContainer.style.borderRadius = "4px";
+        
+        previewContainer.createEl("div", { 
+            text: "选中文本预览：", 
+            cls: "local-edit-label" 
+        }).style.fontWeight = "bold";
+        
+        const contentDiv = previewContainer.createEl("div", { 
+            text: displayContent, 
+            cls: "local-edit-content" 
+        });
+        contentDiv.style.fontStyle = "italic";
+        contentDiv.style.marginTop = "5px";
+        contentDiv.style.color = "var(--text-muted)";
 
         new Setting(contentEl)
             .setName("修改要求")

@@ -223,9 +223,31 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
 
+    // 智能滚动逻辑
     useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
+        if (messages.length === 0) return;
+        const lastMsg = messages[messages.length - 1];
+        if (!lastMsg) return;
+        
+        // 如果正在加载（发送消息过程中）
+        if (isLoading) {
+            if (lastMsg.role === 'user' && lastMsg.id) {
+                // 新的用户消息：滚动到该消息顶部
+                // 使用 setTimeout 确保 DOM 已渲染
+                const msgId = lastMsg.id;
+                setTimeout(() => {
+                    const el = document.getElementById(msgId);
+                    if (el) {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                }, 50);
+            }
+            // 如果是模型消息正在生成，不自动滚动到底部，保持用户消息在顶部
+        } else {
+            // 非加载状态（如切换 Session 或加载历史），滚动到底部
+            scrollToBottom();
+        }
+    }, [messages, isLoading]);
 
     // 检测@和#符号（在任何位置）
     const detectTrigger = (text: string, cursorPos: number): { type: '@' | '#' | null, query: string, startPos: number } => {
@@ -790,6 +812,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                 {messages.map((m, i) => (
                     <div 
                         key={m.id || i} 
+                        id={m.id}
                         className={`voyaru-message voyaru-message-${m.role}`} 
                         style={{ 
                             marginBottom: '16px',

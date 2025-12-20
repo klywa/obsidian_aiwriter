@@ -3,6 +3,7 @@ import { App, Modal } from "obsidian";
 export class LocalEditStatusModal extends Modal {
     private isActive: boolean = false;
     private statusText: string = "正在修改中...";
+    private statusContainerEl: HTMLElement | null = null;
 
     constructor(app: App) {
         super(app);
@@ -13,14 +14,27 @@ export class LocalEditStatusModal extends Modal {
 
     onOpen() {
         this.isActive = true;
-        this.updateContent();
-        // 添加取消按钮
         const { contentEl } = this;
-        const cancelBtn = contentEl.createEl('button', {
+        contentEl.empty();
+        
+        this.statusContainerEl = contentEl.createDiv({
+            cls: "local-edit-status-container",
+            text: this.statusText
+        });
+        
+        this.statusContainerEl.style.padding = "16px";
+        this.statusContainerEl.style.textAlign = "center";
+        this.statusContainerEl.style.fontSize = "14px";
+
+        // 添加取消按钮
+        const btnContainer = contentEl.createDiv();
+        btnContainer.style.textAlign = 'center';
+        btnContainer.style.paddingBottom = '10px';
+
+        const cancelBtn = btnContainer.createEl('button', {
             text: '取消',
             cls: 'mod-cta'
         });
-        cancelBtn.style.marginTop = '8px';
         cancelBtn.style.padding = '4px 12px';
         cancelBtn.style.fontSize = '12px';
         cancelBtn.onclick = () => {
@@ -35,27 +49,14 @@ export class LocalEditStatusModal extends Modal {
 
     onClose() {
         this.isActive = false;
+        this.statusContainerEl = null;
     }
 
     updateStatus(text: string) {
         this.statusText = text;
-        if (this.isActive) {
-            this.updateContent();
+        if (this.isActive && this.statusContainerEl) {
+            this.statusContainerEl.setText(this.statusText);
         }
-    }
-
-    private updateContent() {
-        const { contentEl } = this;
-        contentEl.empty();
-        
-        const container = contentEl.createDiv({
-            cls: "local-edit-status-container",
-            text: this.statusText
-        });
-        
-        container.style.padding = "16px";
-        container.style.textAlign = "center";
-        container.style.fontSize = "14px";
     }
 
     setActive(active: boolean) {

@@ -114,7 +114,7 @@ export default class VoyaruPlugin extends Plugin {
                             .setTitle("局部修改")
                             .setIcon("edit")
                             .onClick(() => {
-                                new LocalEditModal(this.app, async (query: string) => {
+                                new LocalEditModal(this.app, selection, async (query: string) => {
                                     await this.performLocalEdit(file.path, startLine, endLine, selection, query, editor);
                                 }).open();
                             });
@@ -205,7 +205,11 @@ export default class VoyaruPlugin extends Plugin {
             const contextAfter = lines.slice(endLine + 1, Math.min(lines.length, endLine + 6)).join('\n');
             
             // 构建特殊的system prompt
-            const localEditPrompt = `你是一个文本编辑助手。用户要求你对文档中的特定部分进行修改。
+            // 基于已有的 system prompt 增强
+            const baseSystemPrompt = this.settings.systemPrompt || "";
+            const localEditPrompt = `${baseSystemPrompt}
+
+你是一个文本编辑助手。用户要求你对文档中的特定部分进行修改。
 
 **文件路径**: ${filePath}
 **需要修改的行数**: 第${startLine + 1}行到第${endLine + 1}行
@@ -227,7 +231,12 @@ ${contextAfter}
 
 **用户要求**: ${query}
 
-请根据用户的要求修改选中的文本部分，保持与上下文的连贯性。只返回修改后的内容，不要包含其他说明文字。`;
+**输出规则**:
+1. 只输出修改后的文本内容。
+2. 不要包含任何 "好的"、"修改如下" 等对话用语。
+3. 不要包含任何 <think> 标签或思考过程。
+4. 不要使用 markdown 代码块包裹（除非内容本身包含代码）。
+5. 保持与上下文的连贯性。`;
 
             this.localEditStatusModal.updateStatus("正在生成修改...");
 
@@ -252,6 +261,15 @@ ${contextAfter}
                 throw new Error("AI没有返回修改内容");
             }
 
+            // 清理内容：移除可能的 <think> 标签和 markdown 代码块包裹
+            modifiedContent = modifiedContent.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+            
+            // 如果 AI 还是包裹了代码块（例如 ``` ... ```），尝试移除外层包裹
+            // 但要小心不要破坏原本就是代码的内容。
+            // 简单的启发式：如果以 ``` 开头并以 ``` 结尾，且中间没有其他 ```，则移除。
+            // 这里为了安全，暂只依靠 Prompt。如果用户反馈还有问题再加代码处理。
+            // 仅仅去除首尾空白。
+            
             this.localEditStatusModal.updateStatus("正在应用修改...");
 
             // 应用修改到编辑器
