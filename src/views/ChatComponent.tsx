@@ -264,21 +264,24 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         // 如果正在加载（发送消息过程中）
         if (isLoading) {
             // 持续尝试将最新的用户消息置顶
-            // 使用 scrollTop 直接定位，比 scrollIntoView 更快且可控
-            // 下方预留了 Spacer，确保有足够空间滚动
             if (lastUserMessageIdRef.current && messagesEndRef.current) {
                 const el = document.getElementById(lastUserMessageIdRef.current);
                 const container = messagesEndRef.current.parentElement;
                 
                 if (el && container) {
-                    // 计算目标滚动位置：元素位置 - 顶部留白(20px)
-                    // 这样可以避免元素紧贴窗口顶部，保留一点视觉呼吸空间，也不会被“顶掉”
-                    const targetTop = el.offsetTop - 20;
-                    container.scrollTop = targetTop;
+                    // 使用 requestAnimationFrame 确保在渲染后执行滚动
+                    requestAnimationFrame(() => {
+                        // 目标位置：元素距离顶部的距离 - 10px 的缓冲
+                        const targetTop = el.offsetTop - 10;
+                        // 只有当偏差较大时才强制修正，避免微小抖动
+                        if (Math.abs(container.scrollTop - targetTop) > 5) {
+                            container.scrollTop = targetTop;
+                        }
+                    });
                 }
             }
         } else {
-            // 非加载状态（如切换 Session 或加载历史），滚动到底部
+            // 非加载状态，滚动到底部
             scrollToBottom();
         }
     }, [messages, isLoading]);
@@ -1487,7 +1490,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                 })}
                 <div ref={messagesEndRef} />
                 {isLoading && (
-                    <div style={{ height: '60vh', flexShrink: 0 }} />
+                    <div style={{ height: '85vh', flexShrink: 0 }} />
                 )}
             </div>
 
