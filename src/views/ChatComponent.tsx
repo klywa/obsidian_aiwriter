@@ -286,31 +286,41 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
 
     // 动态计算底部空间高度
     useEffect(() => {
-        if (isLoading || messages.length === 0) {
-            setBottomSpacerHeight('85vh');
+        if (messages.length === 0) {
+            setBottomSpacerHeight('0px');
             return;
         }
 
-        // 延迟计算，确保DOM已渲染
-        const timer = setTimeout(() => {
+        const calculateSpacer = () => {
             if (lastQaSectionRef.current && messagesContainerRef.current) {
                 const sectionHeight = lastQaSectionRef.current.offsetHeight;
                 const containerHeight = messagesContainerRef.current.clientHeight;
+                const headerHeight = lastQaSectionRef.current.querySelector('.voyaru-qa-header')?.clientHeight || 0;
                 
-                // 如果最后一个section的高度小于容器高度，只需要补足到容器高度即可
-                if (sectionHeight < containerHeight * 0.8) {
-                    // 底部空间 = 容器高度 - section高度，这样刚好能看到完整内容
-                    const spacerHeight = Math.max(200, containerHeight - sectionHeight - 100);
-                    setBottomSpacerHeight(`${spacerHeight}px`);
-                } else {
-                    // section很长，需要足够的空间让query滚动到顶部
-                    setBottomSpacerHeight('60vh');
-                }
+                // 核心逻辑：Spacer 的高度应该刚好填满视口剩余空间
+                // 这样当滚动到底部时，Query 刚好吸顶，而内容底部刚好贴着视口底部
+                // 我们保留 40px 的缓冲空间（padding）
+                let spacerHeight = containerHeight - sectionHeight - 20;
+
+                // 限制：Spacer 不能小于 20px (保留一点底部呼吸感)
+                spacerHeight = Math.max(20, spacerHeight);
+                
+                // 限制：Spacer 不应该超过视口高度（理论上上面的公式已经保证了，但做个兜底）
+                // 实际上不需要这个限制，因为 containerHeight - sectionHeight 自然会处理
+
+                setBottomSpacerHeight(`${spacerHeight}px`);
             }
-        }, 100);
+        };
+
+        // 立即计算一次
+        calculateSpacer();
+
+        // 延迟计算，确保DOM更新（处理流式输出时的高度变化）
+        // 使用 requestAnimationFrame 可能会更流畅，但 setTimeout 足以应对
+        const timer = setTimeout(calculateSpacer, 50);
 
         return () => clearTimeout(timer);
-    }, [messages, isLoading]);
+    }, [messages, isLoading]); // 依赖项保留 isLoading，虽然逻辑统一了，但 loading 状态变化可能影响 UI 渲染（如 icon）
 
     // 智能滚动逻辑
     useEffect(() => {
@@ -1783,9 +1793,8 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                 {/* 底部占位空间，动态计算以防止过度滚动 */}
                 <div style={{ 
                     height: bottomSpacerHeight,
-                    minHeight: '200px',
-                    maxHeight: '85vh',
-                    flexShrink: 0 
+                    flexShrink: 0,
+                    transition: 'height 0.1s ease-out' // 添加平滑过渡
                 }} />
             </div>
 
