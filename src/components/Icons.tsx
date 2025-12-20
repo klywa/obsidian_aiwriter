@@ -156,3 +156,11 @@ export const ChevronDownIcon = ({ size = 16, style, className }: IconProps) => (
         <polyline points="6 9 12 15 18 9"></polyline>
     </svg>
 );
+
+export const MoreHorizontalIcon = ({ size = 16, style, className }: IconProps) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
+        <circle cx="12" cy="12" r="1"></circle>
+        <circle cx="19" cy="12" r="1"></circle>
+        <circle cx="5" cy="12" r="1"></circle>
+    </svg>
+);

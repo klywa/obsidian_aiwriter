@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useState, useRef, useEffect } from 'react';
 import { AIService } from '../services/ai_service';
 import { FSService } from '../services/fs_service';
-import { SendIcon, StopIcon, PlusIcon, CloseIcon, CopyIcon, FileIcon, EditIcon, RefreshIcon, SaveIcon, UserIcon, BotIcon, ThinkingIcon, ToolIcon, TrashIcon, CheckIcon, TextSizeIcon, LogIcon, ExportIcon, ArrowUpIcon, MentionIcon, ChevronDownIcon } from '../components/Icons';
+import { SendIcon, StopIcon, PlusIcon, CloseIcon, CopyIcon, FileIcon, EditIcon, RefreshIcon, SaveIcon, UserIcon, BotIcon, ThinkingIcon, ToolIcon, TrashIcon, CheckIcon, TextSizeIcon, LogIcon, ExportIcon, ArrowUpIcon, MentionIcon, ChevronDownIcon, MoreHorizontalIcon } from '../components/Icons';
 import { Message, Session, MODELS } from '../settings';
 import { Notice, Menu, TFile, MarkdownView } from 'obsidian';
 import { ExportModal } from '../modals/ExportModal';
@@ -26,7 +26,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
     const [editingSessionName, setEditingSessionName] = useState<string>('');
     const [fontSize, setFontSize] = useState<number>(plugin.settings.fontSize || 14);
-    const [showFontSizeControl, setShowFontSizeControl] = useState(false);
+    const [showSettingsMenu, setShowSettingsMenu] = useState(false);
     const [selectedModel, setSelectedModel] = useState<string>(plugin.settings.model);
     const [showModelSelector, setShowModelSelector] = useState(false);
     const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -39,6 +39,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const popupRef = useRef<HTMLDivElement>(null);
     const modelSelectorRef = useRef<HTMLDivElement>(null);
+    const settingsMenuRef = useRef<HTMLDivElement>(null);
     const editingRef = useRef<HTMLDivElement>(null);
     const lastQaSectionRef = useRef<HTMLDivElement>(null);
     const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -56,6 +57,9 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             
             if (modelSelectorRef.current && !modelSelectorRef.current.contains(target as Node)) {
                 setShowModelSelector(false);
+            }
+            if (settingsMenuRef.current && !settingsMenuRef.current.contains(target as Node)) {
+                setShowSettingsMenu(false);
             }
             if (editingMessageId && editingRef.current && !editingRef.current.contains(target as Node)) {
                 setEditingMessageId(null);
@@ -1290,68 +1294,46 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                 style={{ 
                     marginBottom: isHeader ? '0' : '16px',
                     display: 'flex',
-                    gap: '12px',
-                    alignItems: 'flex-start',
-                    backgroundColor: 'var(--background-primary)', // 确保有背景色，避免透明
+                    flexDirection: 'column',
+                    gap: '6px',
+                    backgroundColor: 'transparent',
                     position: 'relative',
-                    zIndex: isHeader ? 101 : 1 // header中的message有更高的z-index
+                    zIndex: isHeader ? 101 : 1,
+                    maxWidth: '100%',
+                    marginLeft: '0',
+                    marginRight: '0',
+                    alignItems: 'flex-start'
                 }}
             >
-                {/* Avatar */}
-                <div style={{
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '10px', // More rounded
-                    backgroundColor: m.role === 'user' 
-                        ? 'var(--interactive-accent)' 
-                        : m.role === 'error'
-                        ? 'var(--text-error)'
-                        : 'var(--background-secondary)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                    color: m.role === 'user' ? 'var(--text-on-accent)' : m.role === 'error' ? '⚠️' : 'var(--text-normal)'
-                }}>
-                    {m.role === 'user' ? <UserIcon size={18} /> : m.role === 'error' ? '⚠️' : <BotIcon size={18} />}
-                </div>
-                
                 {/* Message Content & Actions */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                    {/* Name & Status */}
-                    <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        marginBottom: '6px'
-                    }}>
-                        <span style={{
-                            fontWeight: 600,
-                            fontSize: '0.9em',
-                            color: m.role === 'error' ? 'var(--text-error)' : 'var(--text-normal)'
-                        }}>
-                            {m.role === 'user' ? '你' : m.role === 'error' ? '错误' : 'Voyaru'}
-                        </span>
-                        {m.type === 'thinking' && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-muted)', fontSize: '0.8em' }}>
-                                <ThinkingIcon size={12} />
-                                <span>思考中</span>
-                            </div>
-                        )}
-                        {/* Actions for User Message - only show for the LAST user message */}
-                        {m.role === 'user' && isLastUserMsg && !isEditing && (
-                            <div 
-                                className="clickable-icon"
-                                onClick={() => startEditingMessage(m.id!, m.content, m.referencedFiles || [])}
-                                style={{ marginLeft: 'auto', cursor: 'pointer', opacity: 0.7 }}
-                                title="修改并重新发送"
-                            >
-                                <EditIcon size={14} />
-                            </div>
-                        )}
-                    </div>
+                <div style={{ minWidth: 0, width: '100%' }}>
+                    {/* Status for thinking */}
+                    {m.type === 'thinking' && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-muted)', fontSize: '0.8em', marginBottom: '4px' }}>
+                            <ThinkingIcon size={12} />
+                            <span>思考中</span>
+                        </div>
+                    )}
+                    
+                    {/* Actions for User Message - only show for the LAST user message */}
+                    {m.role === 'user' && isLastUserMsg && !isEditing && (
+                        <div 
+                            className="clickable-icon"
+                            onClick={() => startEditingMessage(m.id!, m.content, m.referencedFiles || [])}
+                            style={{ 
+                                position: 'absolute',
+                                top: '-20px',
+                                right: '0',
+                                cursor: 'pointer', 
+                                opacity: 0.7,
+                                padding: '4px'
+                            }}
+                            title="修改并重新发送"
+                        >
+                            <EditIcon size={14} />
+                        </div>
+                    )}
 
-                    {/* Editing Mode */}
                     {isEditing ? (
                         <div style={{
                             padding: '12px 16px',
@@ -1464,31 +1446,21 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                             </div>
                         </div>
                     ) : (
-                        /* Normal Bubble */
+                        /* Normal User Message (Full Width Box Style with Background) */
                         <div style={{
-                            padding: '12px 16px',
+                            width: '100%',
+                            color: 'var(--text-normal)',
+                            backgroundColor: 'var(--background-secondary)',
+                            border: '1px solid var(--background-modifier-border)',
                             borderRadius: '12px',
-                            backgroundColor: m.role === 'user' 
-                                ? 'var(--interactive-accent)' 
-                                : m.role === 'error'
-                                ? 'var(--background-modifier-error)'
-                                : 'var(--background-secondary)',
-                            color: m.role === 'user' 
-                                ? 'var(--text-on-accent)' 
-                                : m.role === 'error'
-                                ? 'var(--text-error)'
-                                : 'var(--text-normal)',
-                            border: m.type === 'thinking' 
-                                ? '1px dashed var(--background-modifier-border)' 
-                                : m.role === 'error'
-                                ? '1px solid var(--text-error)'
-                                : 'none',
+                            padding: '12px 16px',
                             userSelect: 'text',
                             whiteSpace: 'pre-wrap',
                             wordBreak: 'break-word',
                             fontSize: '1em',
                             lineHeight: '1.6',
-                            boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                            fontWeight: 500,
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
                         }}>
                             {m.content}
                             {/* Referenced Files Display in Bubble */}
@@ -1496,7 +1468,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                 <div style={{ 
                                     marginTop: '8px', 
                                     paddingTop: '8px', 
-                                    borderTop: '1px solid rgba(255,255,255,0.2)',
+                                    borderTop: '1px solid var(--background-modifier-border)',
                                     fontSize: '0.85em',
                                     display: 'flex',
                                     flexWrap: 'wrap',
@@ -1507,9 +1479,10 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                             display: 'inline-flex', 
                                             alignItems: 'center', 
                                             gap: '4px',
-                                            backgroundColor: 'rgba(0,0,0,0.1)',
+                                            backgroundColor: 'var(--background-secondary)',
                                             padding: '2px 6px',
-                                            borderRadius: '4px'
+                                            borderRadius: '4px',
+                                            color: 'var(--text-muted)'
                                         }}>
                                             <FileIcon size={10} />
                                             <span>{rf}</span>
@@ -1525,7 +1498,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                         <div style={{
                             display: 'flex',
                             gap: '8px',
-                            marginTop: '6px',
+                            marginTop: '4px',
                             opacity: 0.6,
                             transition: 'opacity 0.2s',
                         }}
@@ -1565,7 +1538,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             <div className="voyaru-header" style={{
                 display: 'flex',
                 alignItems: 'center',
-                padding: '10px 12px',
+                padding: '4px 12px',
                 gap: '8px',
                 borderBottom: '1px solid var(--background-modifier-border)',
                 backgroundColor: 'var(--background-secondary-alt)',
@@ -1691,61 +1664,111 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
 
                 {/* Toolbar Buttons */}
                 <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                     {/* Font Size Control */}
-                     <div style={{ position: 'relative' }}>
+                     <div style={{ position: 'relative' }} ref={settingsMenuRef}>
                         <button 
                             className="clickable-icon"
-                            onClick={() => setShowFontSizeControl(!showFontSizeControl)}
+                            onClick={() => setShowSettingsMenu(!showSettingsMenu)}
                             style={{ 
                                 padding: '6px', 
                                 background: 'transparent', 
                                 border: 'none', 
                                 color: 'var(--text-muted)',
-                                cursor: 'pointer' 
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
                             }}
-                            title="调整字体大小"
+                            title="设置"
                         >
-                            <TextSizeIcon size={16} />
+                            <MoreHorizontalIcon size={16} />
                         </button>
-                        {showFontSizeControl && (
+                        {showSettingsMenu && (
                             <div style={{
                                 position: 'absolute',
                                 top: '100%',
                                 right: 0,
+                                marginTop: '4px',
                                 backgroundColor: 'var(--background-primary)',
                                 border: '1px solid var(--background-modifier-border)',
                                 borderRadius: '8px',
-                                padding: '8px',
+                                padding: '4px',
                                 zIndex: 1000,
-                                boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                                minWidth: '160px',
                                 display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px'
+                                flexDirection: 'column',
+                                gap: '2px'
                             }}>
-                                <button onClick={() => setFontSize(s => Math.max(12, s - 1))} style={{ padding: '4px 8px' }}>-</button>
-                                <span style={{ fontSize: '12px', minWidth: '24px', textAlign: 'center' }}>{fontSize}</span>
-                                <button onClick={() => setFontSize(s => Math.min(24, s + 1))} style={{ padding: '4px 8px' }}>+</button>
+                                {/* Font Size Item */}
+                                <div style={{ 
+                                    padding: '8px 12px', 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    justifyContent: 'space-between',
+                                    gap: '12px'
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                                        <TextSizeIcon size={14} />
+                                        <span>字体大小</span>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); setFontSize(s => Math.max(12, s - 1)); }} 
+                                            style={{ 
+                                                padding: '2px 6px', 
+                                                borderRadius: '4px', 
+                                                border: '1px solid var(--background-modifier-border)',
+                                                background: 'var(--background-secondary)',
+                                                cursor: 'pointer',
+                                                fontSize: '12px'
+                                            }}
+                                        >-</button>
+                                        <span style={{ fontSize: '12px', minWidth: '20px', textAlign: 'center' }}>{fontSize}</span>
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); setFontSize(s => Math.min(24, s + 1)); }} 
+                                            style={{ 
+                                                padding: '2px 6px', 
+                                                borderRadius: '4px', 
+                                                border: '1px solid var(--background-modifier-border)',
+                                                background: 'var(--background-secondary)',
+                                                cursor: 'pointer',
+                                                fontSize: '12px'
+                                            }}
+                                        >+</button>
+                                    </div>
+                                </div>
+                                
+                                {/* Divider */}
+                                <div style={{ height: '1px', backgroundColor: 'var(--background-modifier-border)', margin: '2px 0' }} />
+                                
+                                {/* Clear History Item */}
+                                <div 
+                                    className="voyaru-clear-history-btn"
+                                    onClick={() => handleClearHistory(clearHistoryConfirm)}
+                                    style={{ 
+                                        padding: '8px 12px', 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: '8px',
+                                        cursor: 'pointer',
+                                        fontSize: '13px',
+                                        borderRadius: '4px',
+                                        color: clearHistoryConfirm ? 'var(--text-error)' : 'var(--text-normal)',
+                                        backgroundColor: clearHistoryConfirm ? 'var(--background-modifier-error-hover)' : 'transparent'
+                                    }}
+                                    onMouseEnter={e => {
+                                        if (!clearHistoryConfirm) e.currentTarget.style.backgroundColor = 'var(--background-modifier-hover)';
+                                    }}
+                                    onMouseLeave={e => {
+                                        if (!clearHistoryConfirm) e.currentTarget.style.backgroundColor = 'transparent';
+                                    }}
+                                >
+                                    <TrashIcon size={14} />
+                                    <span>{clearHistoryConfirm ? '确认清空？' : '清空历史'}</span>
+                                </div>
                             </div>
                         )}
                     </div>
-                    {/* Clear History */}
-                    <button 
-                        className="clickable-icon voyaru-clear-history-btn"
-                        onClick={() => handleClearHistory(clearHistoryConfirm)}
-                        style={{ 
-                            padding: '6px', 
-                            background: clearHistoryConfirm ? 'var(--background-modifier-error)' : 'transparent', 
-                            border: clearHistoryConfirm ? '1px solid var(--text-error)' : 'none',
-                            borderRadius: '6px',
-                            color: clearHistoryConfirm ? 'var(--text-error)' : 'var(--text-muted)',
-                            cursor: 'pointer',
-                            transform: clearHistoryConfirm ? 'scale(1.1)' : 'scale(1)',
-                            transition: 'all 0.2s ease'
-                        }}
-                        title={clearHistoryConfirm ? '再次点击确认清空' : '清空历史'}
-                    >
-                        <TrashIcon size={clearHistoryConfirm ? 18 : 16} />
-                    </button>
                 </div>
             </div>
 
@@ -1756,7 +1779,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                 style={{ 
                     flex: 1, 
                     overflowY: 'auto', 
-                    padding: '16px',
+                    padding: '0',
                     backgroundColor: 'var(--background-primary)',
                     position: 'relative'
                 }}
