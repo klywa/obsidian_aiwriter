@@ -215,6 +215,7 @@ available in the app when your plugin is enabled.
     padding: 16px;
     scroll-behavior: smooth;
     background-color: var(--background-primary);
+    position: relative;
 }
 
 .voyaru-messages::-webkit-scrollbar {
@@ -232,24 +233,63 @@ available in the app when your plugin is enabled.
 
 /* QA Group Styles for Sticky Header */
 .voyaru-qa-section {
-    position: relative;
     margin-bottom: 24px;
-    border-bottom: 1px solid transparent;
+    position: relative;
 }
 
 .voyaru-qa-header {
+    position: -webkit-sticky; /* Safari support */
     position: sticky;
-    top: -16px; /* Offset for padding */
-    z-index: 10;
+    top: 0; /* 从顶部开始吸附 */
+    z-index: 100;
+    /* 完整覆盖整个宽度 */
+    margin-left: -16px;
+    margin-right: -16px;
+    padding-left: 16px;
+    padding-right: 16px;
+    padding-top: 16px;
+    padding-bottom: 20px; /* 增加底部padding，确保完全覆盖 */
+    margin-bottom: 16px;
+    /* 完全不透明的背景 - 使用双层背景确保 */
     background-color: var(--background-primary);
-    padding-top: 16px; /* Match container padding */
-    padding-bottom: 8px;
-    margin-bottom: 8px;
-    /* Create a fade effect or border when stuck could be nice, but simple bg is enough for now */
+    background-image: linear-gradient(to bottom, var(--background-primary), var(--background-primary));
+    /* 添加底部边框分隔 */
+    border-bottom: 2px solid var(--background-modifier-border);
+    /* 添加阴影增强层次感 */
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    /* 确保内容不会溢出 */
+    overflow: visible;
+}
+
+/* 确保header有完整的背景，使用多层背景 */
+.voyaru-qa-header::before {
+    content: '';
+    position: absolute;
+    top: -10px; /* 向上延伸 */
+    left: 0;
+    right: 0;
+    bottom: -10px; /* 向下延伸 */
+    background-color: var(--background-primary);
+    z-index: -1;
+}
+
+/* 在header底部添加额外的背景层，确保完全覆盖 */
+.voyaru-qa-header::after {
+    content: '';
+    position: absolute;
+    bottom: -16px;
+    left: 0;
+    right: 0;
+    height: 16px;
+    background: var(--background-primary);
+    pointer-events: none;
 }
 
 .voyaru-qa-content {
-    padding-left: 0;
+    /* Answer content area */
+    position: relative;
+    /* 添加顶部padding，避免内容被header遮挡 */
+    padding-top: 8px;
 }
 
 .voyaru-message {

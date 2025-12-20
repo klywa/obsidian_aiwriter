@@ -29,28 +29,55 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const [showFontSizeControl, setShowFontSizeControl] = useState(false);
     const [selectedModel, setSelectedModel] = useState<string>(plugin.settings.model);
     const [showModelSelector, setShowModelSelector] = useState(false);
+    const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+    const [editingContent, setEditingContent] = useState<string>('');
+    const [editingFiles, setEditingFiles] = useState<string[]>([]);
+    const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
+    const [clearHistoryConfirm, setClearHistoryConfirm] = useState(false);
     
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const popupRef = useRef<HTMLDivElement>(null);
     const modelSelectorRef = useRef<HTMLDivElement>(null);
+    const editingRef = useRef<HTMLDivElement>(null);
+    const lastQaSectionRef = useRef<HTMLDivElement>(null);
+    const messagesContainerRef = useRef<HTMLDivElement>(null);
     const sessionsRef = useRef<Session[]>([]);
     const lastUserMessageIdRef = useRef<string | null>(null);
     const prevSessionIdRef = useRef<string | null>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
+    
+    const [bottomSpacerHeight, setBottomSpacerHeight] = useState<string>('50vh');
 
-    // 点击外部关闭模型选择器
+    // 点击外部关闭模型选择器和编辑框，以及取消删除/清空确认状态
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (modelSelectorRef.current && !modelSelectorRef.current.contains(event.target as Node)) {
+            const target = event.target as HTMLElement;
+            
+            if (modelSelectorRef.current && !modelSelectorRef.current.contains(target as Node)) {
                 setShowModelSelector(false);
+            }
+            if (editingMessageId && editingRef.current && !editingRef.current.contains(target as Node)) {
+                setEditingMessageId(null);
+                setEditingContent('');
+                setEditingFiles([]);
+            }
+            
+            // 检查是否点击了删除Session按钮
+            if (!target.closest('.voyaru-delete-session-btn')) {
+                setDeletingSessionId(null);
+            }
+            
+            // 检查是否点击了清空历史按钮
+            if (!target.closest('.voyaru-clear-history-btn')) {
+                setClearHistoryConfirm(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
         };
-    }, []);
+    }, [editingMessageId]);
 
     // 加载保存的sessions和当前选中的session
     useEffect(() => {
@@ -256,6 +283,34 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
+
+    // 动态计算底部空间高度
+    useEffect(() => {
+        if (isLoading || messages.length === 0) {
+            setBottomSpacerHeight('85vh');
+            return;
+        }
+
+        // 延迟计算，确保DOM已渲染
+        const timer = setTimeout(() => {
+            if (lastQaSectionRef.current && messagesContainerRef.current) {
+                const sectionHeight = lastQaSectionRef.current.offsetHeight;
+                const containerHeight = messagesContainerRef.current.clientHeight;
+                
+                // 如果最后一个section的高度小于容器高度，只需要补足到容器高度即可
+                if (sectionHeight < containerHeight * 0.8) {
+                    // 底部空间 = 容器高度 - section高度，这样刚好能看到完整内容
+                    const spacerHeight = Math.max(200, containerHeight - sectionHeight - 100);
+                    setBottomSpacerHeight(`${spacerHeight}px`);
+                } else {
+                    // section很长，需要足够的空间让query滚动到顶部
+                    setBottomSpacerHeight('60vh');
+                }
+            }
+        }, 100);
+
+        return () => clearTimeout(timer);
+    }, [messages, isLoading]);
 
     // 智能滚动逻辑
     useEffect(() => {
@@ -741,32 +796,8 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             }
         }
 
-        // Remove the user message and everything after it from UI
-        // so it gets re-added by handleSendMessage
-        const newMessages = messages.slice(0, userMsgIndex);
-        setMessages(newMessages);
-        
-        // Revert chatHistory: Remove the last User turn and everything after it
-        setChatHistory(prev => {
-            const newHistory = [...prev];
-            let foundUser = false;
-            // Pop messages until we remove the User message
-            while(newHistory.length > 0) {
-                const last = newHistory.pop();
-                if (last && last.role === 'user') {
-                    foundUser = true;
-                    break;
-                }
-            }
-            // If we didn't find a user message, we might have cleared too much or history was empty/desynced.
-            // But we proceed with the truncated history.
-            return newHistory;
-        });
-
-        // Trigger send with the user's content and EXPLICIT history/content
-        // This avoids stale closure issues
-        // Pass the *truncated* history (via callback or calculated) - wait, setState is async.
-        // We need to calculate history locally to pass to handleSendMessage
+        // Calculate the truncated history BEFORE updating state
+        // 使用当前的chatHistory直接计算，避免闭包问题
         const calculatedHistory = [...chatHistory];
         while(calculatedHistory.length > 0) {
             const last = calculatedHistory.pop();
@@ -775,12 +806,35 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             }
         }
 
+        // Remove the user message and everything after it from UI
+        // so it gets re-added by handleSendMessage
+        const newMessages = messages.slice(0, userMsgIndex);
+        setMessages(newMessages);
+        
+        // Revert chatHistory to match the calculated result
+        setChatHistory(calculatedHistory);
+
         if (userMsg) {
             handleSendMessage(userMsg.content, userMsg.referencedFiles || [], calculatedHistory);
         }
     };
 
-    const handleEditUserMessage = async (messageId: string, content: string, files: string[]) => {
+    // 启动编辑模式（原地编辑）
+    const startEditingMessage = (messageId: string, content: string, files: string[]) => {
+        setEditingMessageId(messageId);
+        setEditingContent(content);
+        setEditingFiles(files);
+    };
+
+    // 取消编辑
+    const cancelEditingMessage = () => {
+        setEditingMessageId(null);
+        setEditingContent('');
+        setEditingFiles([]);
+    };
+
+    // 确认编辑并重新发送
+    const confirmEditMessage = async (messageId: string, newContent: string, newFiles: string[]) => {
         const msgIndex = messages.findIndex(m => m.id === messageId);
         if (msgIndex === -1) return;
 
@@ -805,26 +859,30 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             }
         }
 
+        // Calculate the truncated history BEFORE updating state
+        // 使用当前的chatHistory直接计算，避免闭包问题
+        const calculatedHistory = [...chatHistory];
+        while(calculatedHistory.length > 0) {
+            const last = calculatedHistory.pop();
+            if (last && last.role === 'user') {
+                break;
+            }
+        }
+
         // Remove this message and everything after it
         const newMessages = messages.slice(0, msgIndex);
         setMessages(newMessages);
 
-        // Revert history
-        setChatHistory(prev => {
-            const newHistory = [...prev];
-            // Pop until we remove the corresponding User turn
-            while(newHistory.length > 0) {
-                const last = newHistory.pop();
-                if (last && last.role === 'user') {
-                    break;
-                }
-            }
-            return newHistory;
-        });
+        // Revert history to match the calculated result
+        setChatHistory(calculatedHistory);
 
-        setInputValue(content);
-        setReferencedFiles(files);
-        inputRef.current?.focus();
+        // 清除编辑状态
+        setEditingMessageId(null);
+        setEditingContent('');
+        setEditingFiles([]);
+
+        // 重新发送 - 使用已计算好的history
+        handleSendMessage(newContent, newFiles, calculatedHistory);
     };
 
     const handleExport = (content: string) => {
@@ -894,7 +952,16 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         setReferencedFiles([]);
     };
 
-    const deleteSession = (sessionId: string) => {
+    const deleteSession = (sessionId: string, confirmed: boolean = false) => {
+        // 第一次点击：进入确认状态
+        if (!confirmed) {
+            setDeletingSessionId(sessionId);
+            return;
+        }
+        
+        // 第二次点击：真正删除
+        setDeletingSessionId(null);
+        
         if (sessions.length <= 1) {
             // 如果只有一个session，删除它意味着创建一个新的并替换
             const newSession: Session = {
@@ -929,7 +996,16 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         setEditingSessionId(null);
     };
 
-    const handleClearHistory = () => {
+    const handleClearHistory = (confirmed: boolean = false) => {
+        // 第一次点击：进入确认状态
+        if (!confirmed) {
+            setClearHistoryConfirm(true);
+            return;
+        }
+        
+        // 第二次点击：真正清空
+        setClearHistoryConfirm(false);
+        
         // 清空当前会话的消息和历史
         setMessages([]);
         setChatHistory([]);
@@ -1193,17 +1269,22 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
 
         // Normal Message (Text, Thinking, Error)
         const isLastUserMsg = m.role === 'user' && m.id === lastUserMessageId;
+        const isEditing = editingMessageId === m.id;
 
         return (
             <div 
                 key={m.id} 
                 id={m.id}
+                ref={isEditing ? editingRef : null}
                 className={`voyaru-message voyaru-message-${m.role}`} 
                 style={{ 
                     marginBottom: isHeader ? '0' : '16px',
                     display: 'flex',
                     gap: '12px',
-                    alignItems: 'flex-start'
+                    alignItems: 'flex-start',
+                    backgroundColor: 'var(--background-primary)', // 确保有背景色，避免透明
+                    position: 'relative',
+                    zIndex: isHeader ? 101 : 1 // header中的message有更高的z-index
                 }}
             >
                 {/* Avatar */}
@@ -1220,7 +1301,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     alignItems: 'center',
                     justifyContent: 'center',
                     flexShrink: 0,
-                    color: m.role === 'user' ? 'var(--text-on-accent)' : m.role === 'error' ? 'var(--text-on-accent)' : 'var(--text-normal)'
+                    color: m.role === 'user' ? 'var(--text-on-accent)' : m.role === 'error' ? '⚠️' : 'var(--text-normal)'
                 }}>
                     {m.role === 'user' ? <UserIcon size={18} /> : m.role === 'error' ? '⚠️' : <BotIcon size={18} />}
                 </div>
@@ -1248,10 +1329,10 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                             </div>
                         )}
                         {/* Actions for User Message - only show for the LAST user message */}
-                        {m.role === 'user' && isLastUserMsg && (
+                        {m.role === 'user' && isLastUserMsg && !isEditing && (
                             <div 
                                 className="clickable-icon"
-                                onClick={() => handleEditUserMessage(m.id!, m.content, m.referencedFiles || [])}
+                                onClick={() => startEditingMessage(m.id!, m.content, m.referencedFiles || [])}
                                 style={{ marginLeft: 'auto', cursor: 'pointer', opacity: 0.7 }}
                                 title="修改并重新发送"
                             >
@@ -1260,60 +1341,174 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                         )}
                     </div>
 
-                    {/* Bubble */}
-                    <div style={{
-                        padding: '12px 16px',
-                        borderRadius: '12px',
-                        backgroundColor: m.role === 'user' 
-                            ? 'var(--interactive-accent)' 
-                            : m.role === 'error'
-                            ? 'var(--background-modifier-error)'
-                            : 'var(--background-secondary)',
-                        color: m.role === 'user' 
-                            ? 'var(--text-on-accent)' 
-                            : m.role === 'error'
-                            ? 'var(--text-error)'
-                            : 'var(--text-normal)',
-                        border: m.type === 'thinking' 
-                            ? '1px dashed var(--background-modifier-border)' 
-                            : m.role === 'error'
-                            ? '1px solid var(--text-error)'
-                            : 'none',
-                        userSelect: 'text',
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word',
-                        fontSize: '1em',
-                        lineHeight: '1.6',
-                        boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-                    }}>
-                        {m.content}
-                        {/* Referenced Files Display in Bubble */}
-                        {m.role === 'user' && m.referencedFiles && m.referencedFiles.length > 0 && (
-                            <div style={{ 
-                                marginTop: '8px', 
-                                paddingTop: '8px', 
-                                borderTop: '1px solid rgba(255,255,255,0.2)',
-                                fontSize: '0.85em',
+                    {/* Editing Mode */}
+                    {isEditing ? (
+                        <div style={{
+                            padding: '12px 16px',
+                            borderRadius: '12px',
+                            backgroundColor: 'var(--background-primary)',
+                            border: '2px solid var(--interactive-accent)',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+                        }}>
+                            {/* Editing Files */}
+                            {editingFiles.length > 0 && (
+                                <div style={{
+                                    marginBottom: '8px',
+                                    display: 'flex',
+                                    flexWrap: 'wrap',
+                                    gap: '6px'
+                                }}>
+                                    {editingFiles.map(f => (
+                                        <div key={f} style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                            backgroundColor: 'var(--background-modifier-hover)',
+                                            padding: '2px 8px',
+                                            borderRadius: '6px',
+                                            fontSize: '0.85em'
+                                        }}>
+                                            <FileIcon size={10} />
+                                            <span>{f}</span>
+                                            <div
+                                                onClick={() => setEditingFiles(prev => prev.filter(x => x !== f))}
+                                                style={{ cursor: 'pointer', marginLeft: '4px', opacity: 0.6 }}
+                                            >
+                                                <CloseIcon size={10} />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            
+                            {/* Textarea */}
+                            <textarea
+                                value={editingContent}
+                                onChange={(e) => setEditingContent(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                        e.preventDefault();
+                                        confirmEditMessage(m.id!, editingContent, editingFiles);
+                                    } else if (e.key === 'Escape') {
+                                        e.preventDefault();
+                                        cancelEditingMessage();
+                                    }
+                                }}
+                                autoFocus
+                                style={{
+                                    width: '100%',
+                                    minHeight: '80px',
+                                    maxHeight: '200px',
+                                    resize: 'vertical',
+                                    padding: '8px',
+                                    border: 'none',
+                                    outline: 'none',
+                                    backgroundColor: 'var(--background-secondary)',
+                                    color: 'var(--text-normal)',
+                                    borderRadius: '8px',
+                                    fontFamily: 'inherit',
+                                    fontSize: 'inherit',
+                                    lineHeight: '1.6'
+                                }}
+                            />
+                            
+                            {/* Buttons */}
+                            <div style={{
                                 display: 'flex',
-                                flexWrap: 'wrap',
-                                gap: '6px'
+                                gap: '8px',
+                                marginTop: '8px',
+                                justifyContent: 'flex-end'
                             }}>
-                                {m.referencedFiles.map(rf => (
-                                    <div key={rf} style={{ 
-                                        display: 'inline-flex', 
-                                        alignItems: 'center', 
-                                        gap: '4px',
-                                        backgroundColor: 'rgba(0,0,0,0.1)',
-                                        padding: '2px 6px',
-                                        borderRadius: '4px'
-                                    }}>
-                                        <FileIcon size={10} />
-                                        <span>{rf}</span>
-                                    </div>
-                                ))}
+                                <button
+                                    onClick={cancelEditingMessage}
+                                    style={{
+                                        padding: '6px 12px',
+                                        borderRadius: '8px',
+                                        border: '1px solid var(--background-modifier-border)',
+                                        backgroundColor: 'var(--background-secondary)',
+                                        color: 'var(--text-normal)',
+                                        cursor: 'pointer',
+                                        fontSize: '0.9em'
+                                    }}
+                                >
+                                    取消
+                                </button>
+                                <button
+                                    onClick={() => confirmEditMessage(m.id!, editingContent, editingFiles)}
+                                    style={{
+                                        padding: '6px 12px',
+                                        borderRadius: '8px',
+                                        border: 'none',
+                                        backgroundColor: 'var(--interactive-accent)',
+                                        color: 'var(--text-on-accent)',
+                                        cursor: 'pointer',
+                                        fontSize: '0.9em',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px'
+                                    }}
+                                >
+                                    <SendIcon size={14} />
+                                    <span>发送</span>
+                                </button>
                             </div>
-                        )}
-                    </div>
+                        </div>
+                    ) : (
+                        /* Normal Bubble */
+                        <div style={{
+                            padding: '12px 16px',
+                            borderRadius: '12px',
+                            backgroundColor: m.role === 'user' 
+                                ? 'var(--interactive-accent)' 
+                                : m.role === 'error'
+                                ? 'var(--background-modifier-error)'
+                                : 'var(--background-secondary)',
+                            color: m.role === 'user' 
+                                ? 'var(--text-on-accent)' 
+                                : m.role === 'error'
+                                ? 'var(--text-error)'
+                                : 'var(--text-normal)',
+                            border: m.type === 'thinking' 
+                                ? '1px dashed var(--background-modifier-border)' 
+                                : m.role === 'error'
+                                ? '1px solid var(--text-error)'
+                                : 'none',
+                            userSelect: 'text',
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word',
+                            fontSize: '1em',
+                            lineHeight: '1.6',
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                        }}>
+                            {m.content}
+                            {/* Referenced Files Display in Bubble */}
+                            {m.role === 'user' && m.referencedFiles && m.referencedFiles.length > 0 && (
+                                <div style={{ 
+                                    marginTop: '8px', 
+                                    paddingTop: '8px', 
+                                    borderTop: '1px solid rgba(255,255,255,0.2)',
+                                    fontSize: '0.85em',
+                                    display: 'flex',
+                                    flexWrap: 'wrap',
+                                    gap: '6px'
+                                }}>
+                                    {m.referencedFiles.map(rf => (
+                                        <div key={rf} style={{ 
+                                            display: 'inline-flex', 
+                                            alignItems: 'center', 
+                                            gap: '4px',
+                                            backgroundColor: 'rgba(0,0,0,0.1)',
+                                            padding: '2px 6px',
+                                            borderRadius: '4px'
+                                        }}>
+                                            <FileIcon size={10} />
+                                            <span>{rf}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* Action Bar (Only for Model Text messages) - only show when not loading */ }
                     {m.role === 'model' && m.type === 'text' && !isLoading && (
@@ -1432,13 +1627,24 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                 <>
                                     <span style={{ maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{session.name}</span>
                                     <div
+                                        className="voyaru-delete-session-btn"
                                         onClick={(e) => {
                                             e.stopPropagation();
-                                            deleteSession(session.id);
+                                            deleteSession(session.id, deletingSessionId === session.id);
                                         }}
-                                        style={{ cursor: 'pointer', opacity: 0.7 }}
+                                        style={{ 
+                                            cursor: 'pointer', 
+                                            opacity: deletingSessionId === session.id ? 1 : 0.7,
+                                            color: deletingSessionId === session.id ? 'var(--text-error)' : 'inherit',
+                                            transform: deletingSessionId === session.id ? 'scale(1.2)' : 'scale(1)',
+                                            transition: 'all 0.2s ease',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '2px'
+                                        }}
+                                        title={deletingSessionId === session.id ? '再次点击确认删除' : '删除对话'}
                                     >
-                                        <CloseIcon size={12} />
+                                        <CloseIcon size={deletingSessionId === session.id ? 14 : 12} />
                                     </div>
                                 </>
                             )}
@@ -1514,37 +1720,44 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     </div>
                     {/* Clear History */}
                     <button 
-                        className="clickable-icon"
-                        onClick={() => {
-                            // Simple confirm logic could be added here, but direct action is faster as per request
-                            if (window.confirm("确定要清空当前对话历史吗？此操作无法撤销。")) {
-                                handleClearHistory();
-                            }
-                        }}
+                        className="clickable-icon voyaru-clear-history-btn"
+                        onClick={() => handleClearHistory(clearHistoryConfirm)}
                         style={{ 
                             padding: '6px', 
-                            background: 'transparent', 
-                            border: 'none', 
-                            color: 'var(--text-muted)',
-                            cursor: 'pointer' 
+                            background: clearHistoryConfirm ? 'var(--background-modifier-error)' : 'transparent', 
+                            border: clearHistoryConfirm ? '1px solid var(--text-error)' : 'none',
+                            borderRadius: '6px',
+                            color: clearHistoryConfirm ? 'var(--text-error)' : 'var(--text-muted)',
+                            cursor: 'pointer',
+                            transform: clearHistoryConfirm ? 'scale(1.1)' : 'scale(1)',
+                            transition: 'all 0.2s ease'
                         }}
-                        title="清空历史"
+                        title={clearHistoryConfirm ? '再次点击确认清空' : '清空历史'}
                     >
-                        <TrashIcon size={16} />
+                        <TrashIcon size={clearHistoryConfirm ? 18 : 16} />
                     </button>
                 </div>
             </div>
 
             {/* Messages */}
-            <div className="voyaru-messages" style={{ 
-                flex: 1, 
-                overflowY: 'auto', 
-                padding: '16px',
-                backgroundColor: 'var(--background-primary)',
-                position: 'relative'
-            }}>
-                {qaGroups.map((group) => (
-                    <div key={group.id} id={group.id} className="voyaru-qa-section">
+            <div 
+                ref={messagesContainerRef}
+                className="voyaru-messages" 
+                style={{ 
+                    flex: 1, 
+                    overflowY: 'auto', 
+                    padding: '16px',
+                    backgroundColor: 'var(--background-primary)',
+                    position: 'relative'
+                }}
+            >
+                {qaGroups.map((group, index) => (
+                    <div 
+                        key={group.id} 
+                        id={group.id} 
+                        className="voyaru-qa-section"
+                        ref={index === qaGroups.length - 1 ? lastQaSectionRef : null}
+                    >
                         {/* Header: User Message (if exists) */}
                         {group.userMessage && (
                             <div className="voyaru-qa-header">
@@ -1567,9 +1780,13 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                 ))}
                 
                 <div ref={messagesEndRef} />
-                {isLoading && (
-                    <div style={{ height: '85vh', flexShrink: 0 }} />
-                )}
+                {/* 底部占位空间，动态计算以防止过度滚动 */}
+                <div style={{ 
+                    height: bottomSpacerHeight,
+                    minHeight: '200px',
+                    maxHeight: '85vh',
+                    flexShrink: 0 
+                }} />
             </div>
 
             {/* Referenced Files Area */}
