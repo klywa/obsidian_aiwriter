@@ -2,9 +2,11 @@ import * as React from 'react';
 import { useState, useRef, useEffect } from 'react';
 import { AIService } from '../services/ai_service';
 import { FSService } from '../services/fs_service';
-import { SendIcon, StopIcon, PlusIcon, CloseIcon, CopyIcon, FileIcon, EditIcon, RefreshIcon, SaveIcon, UserIcon, BotIcon, ThinkingIcon, ToolIcon, TrashIcon, CheckIcon, TextSizeIcon } from '../components/Icons';
-import { Message, Session } from '../settings';
-import { Notice, Menu } from 'obsidian';
+import { SendIcon, StopIcon, PlusIcon, CloseIcon, CopyIcon, FileIcon, EditIcon, RefreshIcon, SaveIcon, UserIcon, BotIcon, ThinkingIcon, ToolIcon, TrashIcon, CheckIcon, TextSizeIcon, LogIcon, ExportIcon, ArrowUpIcon, MentionIcon, ChevronDownIcon } from '../components/Icons';
+import { Message, Session, MODELS } from '../settings';
+import { Notice, Menu, TFile, MarkdownView } from 'obsidian';
+import { ExportModal } from '../modals/ExportModal';
+import { LogModal } from '../modals/LogModal';
 
 export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerEl?: HTMLElement }) => {
     const [sessions, setSessions] = useState<Session[]>([]);
@@ -23,14 +25,31 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const [selectedIndex, setSelectedIndex] = useState<number>(-1);
     const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
     const [editingSessionName, setEditingSessionName] = useState<string>('');
-    const [fontSize, setFontSize] = useState<number>(14);
+    const [fontSize, setFontSize] = useState<number>(plugin.settings.fontSize || 14);
     const [showFontSizeControl, setShowFontSizeControl] = useState(false);
+    const [selectedModel, setSelectedModel] = useState<string>(plugin.settings.model);
+    const [showModelSelector, setShowModelSelector] = useState(false);
     
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const popupRef = useRef<HTMLDivElement>(null);
+    const modelSelectorRef = useRef<HTMLDivElement>(null);
     const sessionsRef = useRef<Session[]>([]);
     const prevSessionIdRef = useRef<string | null>(null);
+    const abortControllerRef = useRef<AbortController | null>(null);
+
+    // 点击外部关闭模型选择器
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (modelSelectorRef.current && !modelSelectorRef.current.contains(event.target as Node)) {
+                setShowModelSelector(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, []);
 
     // 加载保存的sessions和当前选中的session
     useEffect(() => {
@@ -139,6 +158,17 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         };
     }, []);
 
+    // 保存字体大小
+    useEffect(() => {
+        const saveFontSize = async () => {
+            if (plugin.settings.fontSize !== fontSize) {
+                plugin.settings.fontSize = fontSize;
+                await plugin.saveSettings();
+            }
+        };
+        saveFontSize();
+    }, [fontSize]);
+
     // 当切换session时更新消息和历史，并保存当前选中的session ID
     useEffect(() => {
         if (currentSessionId && currentSessionId !== prevSessionIdRef.current) {
@@ -244,8 +274,10 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                         el.scrollIntoView({ behavior: 'smooth', block: 'start' });
                     }
                 }, 50);
+            } else {
+                // 生成过程中，实时下拉聊天窗口，显示最新内容
+                scrollToBottom();
             }
-            // 如果是模型消息正在生成，不自动滚动到底部，保持用户消息在顶部
         } else {
             // 非加载状态（如切换 Session 或加载历史），滚动到底部
             scrollToBottom();
@@ -406,21 +438,34 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         }
     };
 
-    const handleSendMessage = async () => {
-        if (!inputValue.trim() || isLoading) return;
+    const handleStopGeneration = () => {
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
+            setIsLoading(false);
+            new Notice("生成已停止");
+        }
+    };
 
-        const messageContent = inputValue.trim();
+    const handleSendMessage = async (manualContent?: string, manualFiles?: string[], manualHistory?: any[]) => {
+        const contentToSend = manualContent ?? inputValue;
+        if (!contentToSend.trim() || isLoading) return;
+
+        const filesToSend = manualFiles ?? referencedFiles;
+        const historyToUse = manualHistory ?? chatHistory;
+
+        const messageContent = contentToSend.trim();
         const newUserMsg: Message = { 
             role: 'user', 
             content: messageContent,
             id: `msg-${Date.now()}`,
-            referencedFiles: [...referencedFiles]
+            referencedFiles: [...filesToSend]
         };
         
         console.log('Sending message:', messageContent);
         setMessages(prev => [...prev, newUserMsg]);
-        setInputValue('');
-        setReferencedFiles([]);
+        if (!manualContent) setInputValue(''); // Only clear input if not manual (or handled elsewhere)
+        if (!manualFiles) setReferencedFiles([]);
         setIsLoading(true);
 
         // 更新当前session的消息（在发送时）
@@ -439,35 +484,51 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             }));
         }
 
+        abortControllerRef.current = new AbortController();
+
         try {
             // 检查 aiService 是否存在
             if (!plugin.aiService) {
                 throw new Error("AI Service 未初始化。请检查插件设置。");
             }
 
-            console.log('Calling streamChat with history length:', chatHistory.length);
-            const stream = plugin.aiService.streamChat(chatHistory, messageContent, referencedFiles);
+            // Sync model setting before sending
+            plugin.settings.model = selectedModel;
+            plugin.aiService.updateSettings(plugin.settings);
 
-            let currentResponse = "";
-            let responseId = `msg-${Date.now()}-response`;
+            console.log('Calling streamChat with history length:', historyToUse.length);
+            const stream = plugin.aiService.streamChat(historyToUse, messageContent, newUserMsg.referencedFiles, abortControllerRef.current.signal);
+
+            let currentResponseId = `msg-${Date.now()}-response`;
+            let currentResponseContent = ""; // Accumulate text for the current message ID
             let hasReceivedAnyChunk = false;
             let updateTimer: NodeJS.Timeout | null = null;
-            let pendingUpdate: string | null = null;
+            let pendingUpdateContent: string | null = null;
+            let pendingUpdateId: string | null = null;
+            let fullLog: any[] = []; // Store logs
 
             // 批量更新函数，减少渲染次数
-            const scheduleUpdate = (content: string) => {
-                pendingUpdate = content;
+            // Now accepts ID to target specific messages
+            const scheduleUpdate = (id: string, content: string) => {
+                pendingUpdateContent = content;
+                pendingUpdateId = id;
+                
                 if (updateTimer) {
                     clearTimeout(updateTimer);
                 }
                 updateTimer = setTimeout(() => {
-                    if (pendingUpdate !== null) {
-                        const contentToUpdate = pendingUpdate; // Capture the current value locally
+                    if (pendingUpdateContent !== null && pendingUpdateId !== null) {
+                        const contentToUpdate = pendingUpdateContent; 
+                        const idToUpdate = pendingUpdateId;
+                        
                         setMessages(prev => {
-                            const existingIndex = prev.findIndex(m => m.id === responseId);
+                            const existingIndex = prev.findIndex(m => m.id === idToUpdate);
                             if (existingIndex !== -1) {
                                 const newMessages = [...prev];
-                                newMessages[existingIndex] = { ...newMessages[existingIndex], content: contentToUpdate } as Message;
+                                const msg = newMessages[existingIndex];
+                                if (msg) {
+                                    newMessages[existingIndex] = { ...msg, content: contentToUpdate, toolData: { ...(msg.toolData || {}), logs: fullLog } } as Message;
+                                }
                                 return newMessages;
                             } else {
                                 // Message doesn't exist yet, create it
@@ -475,87 +536,116 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                     role: 'model', 
                                     content: contentToUpdate, 
                                     type: 'text',
-                                    id: responseId
+                                    id: idToUpdate,
+                                    toolData: { logs: fullLog }
                                 }];
                             }
                         });
-                        pendingUpdate = null;
+                        pendingUpdateContent = null;
+                        pendingUpdateId = null;
                     }
-                }, 50); // 每50ms更新一次，平衡流畅度和性能
+                }, 50); 
+            };
+            
+            // Helper to force immediate update if we are switching contexts
+            const flushUpdate = () => {
+                if (updateTimer) {
+                    clearTimeout(updateTimer);
+                    updateTimer = null;
+                }
+                if (pendingUpdateContent !== null && pendingUpdateId !== null) {
+                    const contentToUpdate = pendingUpdateContent; 
+                    const idToUpdate = pendingUpdateId;
+                    setMessages(prev => {
+                        const existingIndex = prev.findIndex(m => m.id === idToUpdate);
+                         if (existingIndex !== -1) {
+                             const newMessages = [...prev];
+                             const msg = newMessages[existingIndex];
+                             if (msg) {
+                                newMessages[existingIndex] = { ...msg, content: contentToUpdate, toolData: { ...(msg.toolData || {}), logs: fullLog } } as Message;
+                             }
+                             return newMessages;
+                         } else {
+                             return [...prev, { role: 'model', content: contentToUpdate, type: 'text', id: idToUpdate, toolData: { logs: fullLog } }];
+                         }
+                    });
+                    pendingUpdateContent = null;
+                    pendingUpdateId = null;
+                }
             };
 
             for await (const chunk of stream) {
+                if (abortControllerRef.current?.signal.aborted) break;
+                
                 hasReceivedAnyChunk = true;
+                // Accumulate logs
+                fullLog.push(chunk);
+                
                 console.log('Received chunk:', chunk.type, chunk);
                 
                 if (chunk.type === 'text') {
-                    currentResponse += chunk.content;
-                    scheduleUpdate(currentResponse);
-                } else if (chunk.type === 'thinking') {
-                    // 立即更新thinking消息，不需要批量处理
-                    setMessages(prev => [...prev, { 
-                        role: 'model', 
-                        content: chunk.content, 
-                        type: 'thinking',
-                        id: `msg-${Date.now()}-thinking`
-                    }]);
-                } else if (chunk.type === 'tool_result') {
-                    // 立即更新tool_result消息，包含 args
-                    setMessages(prev => [...prev, { 
-                        role: 'model', 
-                        content: `Tool ${chunk.tool} executed: ${chunk.result}`, 
-                        type: 'tool_result',
-                        tool: chunk.tool,
-                        toolData: { result: chunk.result, args: chunk.args },
-                        id: `msg-${Date.now()}-tool`
-                    }]);
-                } else if (chunk.type === 'error') {
-                    // 清除待处理的更新
-                    if (updateTimer) {
-                        clearTimeout(updateTimer);
-                        updateTimer = null;
+                    // Normal text accumulation
+                    currentResponseContent += chunk.content;
+                    scheduleUpdate(currentResponseId, currentResponseContent);
+                } else {
+                    // For ANY non-text chunk (Thinking, Tool Result, Error, etc.)
+                    // First, ensure any pending text updates are finalized so the order is preserved
+                    flushUpdate();
+                    
+                    if (chunk.type === 'thinking') {
+                        // 立即更新thinking消息
+                        setMessages(prev => [...prev, { 
+                            role: 'model', 
+                            content: chunk.content, 
+                            type: 'thinking',
+                            id: `msg-${Date.now()}-thinking`
+                        }]);
+                    } else if (chunk.type === 'tool_result') {
+                        // 立即更新tool_result消息
+                        setMessages(prev => [...prev, { 
+                            role: 'model', 
+                            content: `Tool ${chunk.tool} executed: ${chunk.result}`, 
+                            type: 'tool_result',
+                            tool: chunk.tool,
+                            toolData: { 
+                                result: chunk.result, 
+                                args: chunk.args,
+                                undoData: chunk.undoData 
+                            },
+                            id: `msg-${Date.now()}-tool`
+                        }]);
+                    } else if (chunk.type === 'error') {
+                        console.error('Error chunk received:', chunk.content);
+                        setMessages(prev => [...prev, { 
+                            role: 'error', 
+                            content: chunk.content,
+                            id: `msg-${Date.now()}-error`
+                        }]);
+                        setIsLoading(false);
+                        return; 
+                    } else if (chunk.type === 'history_update') {
+                        const updatedHistory = chunk.history;
+                        setChatHistory(updatedHistory);
                     }
-                    console.error('Error chunk received:', chunk.content);
-                    setMessages(prev => [...prev, { 
-                        role: 'error', 
-                        content: chunk.content,
-                        id: `msg-${Date.now()}-error`
-                    }]);
-                    setIsLoading(false);
-                    return; // 遇到错误时提前返回
-                } else if (chunk.type === 'history_update') {
-                    const updatedHistory = chunk.history;
-                    setChatHistory(updatedHistory);
+                    
+                    // If we interrupted a text stream (meaning we had content), or if we just had a tool call,
+                    // we want the NEXT text chunk to start a NEW message bubble.
+                    // But if currentResponseContent was empty, we can reuse the ID? 
+                    // No, safe to just always rotate ID after an interruption to ensure strict ordering.
+                    // Exception: history_update shouldn't break text flow? 
+                    // Actually history_update usually comes at the end.
+                    if (chunk.type !== 'history_update') {
+                        currentResponseId = `msg-${Date.now()}-${Math.random()}-response`;
+                        currentResponseContent = "";
+                    }
                 }
             }
 
-            // 确保最终内容被更新（清除定时器并立即更新）
-            if (updateTimer) {
-                clearTimeout(updateTimer);
-            }
-            if (pendingUpdate !== null || currentResponse) {
-                const finalContent = pendingUpdate || currentResponse; // Capture final content
-                setMessages(prev => {
-                    if (!finalContent) return prev; // 如果内容为空，不操作
-                    
-                    const existingIndex = prev.findIndex(m => m.id === responseId);
-                    if (existingIndex !== -1) {
-                        const newMessages = [...prev];
-                        newMessages[existingIndex] = { ...newMessages[existingIndex], content: finalContent } as Message;
-                        return newMessages;
-                    } else {
-                         return [...prev, { 
-                            role: 'model', 
-                            content: finalContent, 
-                            type: 'text',
-                            id: responseId
-                        }];
-                    }
-                });
-            }
+            // 确保最终内容被更新
+            flushUpdate();
 
             // 如果没有收到任何响应，显示提示
-            if (!hasReceivedAnyChunk) {
+            if (!hasReceivedAnyChunk && !abortControllerRef.current?.signal.aborted) {
                 console.warn('No chunks received from stream');
                 setMessages(prev => [...prev, { 
                     role: 'error', 
@@ -565,6 +655,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             }
 
         } catch (e: any) {
+            if (e.message === "生成已取消") return;
             console.error('Error in handleSendMessage:', e);
             const errorMessage = e?.message || e?.toString() || "发生未知错误。";
             setMessages(prev => [...prev, { 
@@ -574,9 +665,153 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             }]);
         } finally {
             setIsLoading(false);
+            abortControllerRef.current = null;
             // 确保最终状态被保存（通过 useEffect 自动触发保存）
         }
     };
+
+    const handleRegenerate = async (messageId: string) => {
+        // Find the index of the message to regenerate
+        const msgIndex = messages.findIndex(m => m.id === messageId);
+        if (msgIndex === -1) return;
+
+        // Search backwards for the corresponding user message
+        let userMsgIndex = -1;
+        for (let i = msgIndex - 1; i >= 0; i--) {
+            if (messages[i] && messages[i]!.role === 'user') {
+                userMsgIndex = i;
+                break;
+            }
+        }
+        
+        if (userMsgIndex < 0) {
+            new Notice("无法重新生成：找不到对应的用户提问");
+            return;
+        }
+
+        const userMsg = messages[userMsgIndex];
+
+        // Revert file changes for ALL messages from the user message onwards
+        // (including the user message itself, though it usually has no tool calls, 
+        // but subsequent model messages do)
+        const messagesToRemove = messages.slice(userMsgIndex + 1);
+        for (const msg of messagesToRemove) {
+            if (msg.role === 'model' && msg.type === 'tool_result' && msg.tool === 'writeFile' && msg.toolData && msg.toolData.undoData) {
+                const undo = msg.toolData.undoData;
+                try {
+                    console.log(`Reverting file change for ${undo.path}`);
+                    if (undo.previousContent === null) {
+                        // File was created, so delete it
+                        await plugin.fsService.deleteFile(undo.path);
+                        new Notice(`已撤销创建: ${undo.path}`);
+                    } else {
+                        // File was modified, restore content
+                        if (undo && undo.previousContent !== null) {
+                            await plugin.fsService.writeFile(undo.path, undo.previousContent);
+                            new Notice(`已撤销修改: ${undo.path}`);
+                        }
+                    }
+                } catch (e) {
+                    console.error(`Failed to revert file ${undo.path}:`, e);
+                    new Notice(`撤销文件更改失败: ${undo.path}`);
+                }
+            }
+        }
+
+        // Remove the user message and everything after it from UI
+        // so it gets re-added by handleSendMessage
+        const newMessages = messages.slice(0, userMsgIndex);
+        setMessages(newMessages);
+        
+        // Revert chatHistory: Remove the last User turn and everything after it
+        setChatHistory(prev => {
+            const newHistory = [...prev];
+            let foundUser = false;
+            // Pop messages until we remove the User message
+            while(newHistory.length > 0) {
+                const last = newHistory.pop();
+                if (last && last.role === 'user') {
+                    foundUser = true;
+                    break;
+                }
+            }
+            // If we didn't find a user message, we might have cleared too much or history was empty/desynced.
+            // But we proceed with the truncated history.
+            return newHistory;
+        });
+
+        // Trigger send with the user's content and EXPLICIT history/content
+        // This avoids stale closure issues
+        // Pass the *truncated* history (via callback or calculated) - wait, setState is async.
+        // We need to calculate history locally to pass to handleSendMessage
+        const calculatedHistory = [...chatHistory];
+        while(calculatedHistory.length > 0) {
+            const last = calculatedHistory.pop();
+            if (last && last.role === 'user') {
+                break;
+            }
+        }
+
+        if (userMsg) {
+            handleSendMessage(userMsg.content, userMsg.referencedFiles || [], calculatedHistory);
+        }
+    };
+
+    const handleEditUserMessage = async (messageId: string, content: string, files: string[]) => {
+        const msgIndex = messages.findIndex(m => m.id === messageId);
+        if (msgIndex === -1) return;
+
+        // Revert file changes for ALL messages being removed (from msgIndex to end)
+        // User message is at msgIndex, so everything after it are model responses
+        const messagesToRemove = messages.slice(msgIndex);
+        for (const msg of messagesToRemove) {
+            if (msg.role === 'model' && msg.type === 'tool_result' && msg.tool === 'writeFile' && msg.toolData && msg.toolData.undoData) {
+                const undo = msg.toolData.undoData;
+                try {
+                    console.log(`Reverting file change for ${undo.path}`);
+                    if (undo.previousContent === null) {
+                        await plugin.fsService.deleteFile(undo.path);
+                        new Notice(`已撤销创建: ${undo.path}`);
+                    } else {
+                        await plugin.fsService.writeFile(undo.path, undo.previousContent);
+                        new Notice(`已撤销修改: ${undo.path}`);
+                    }
+                } catch (e) {
+                    console.error(`Failed to revert file ${undo.path}:`, e);
+                }
+            }
+        }
+
+        // Remove this message and everything after it
+        const newMessages = messages.slice(0, msgIndex);
+        setMessages(newMessages);
+
+        // Revert history
+        setChatHistory(prev => {
+            const newHistory = [...prev];
+            // Pop until we remove the corresponding User turn
+            while(newHistory.length > 0) {
+                const last = newHistory.pop();
+                if (last && last.role === 'user') {
+                    break;
+                }
+            }
+            return newHistory;
+        });
+
+        setInputValue(content);
+        setReferencedFiles(files);
+        inputRef.current?.focus();
+    };
+
+    const handleExport = (content: string) => {
+        new ExportModal(plugin.app, content, plugin.fsService).open();
+    };
+
+    const handleShowLogs = (logs: any) => {
+        new LogModal(plugin.app, logs).open();
+    };
+
 
     const insertTool = (tool: any) => {
         const cursorPos = inputRef.current?.selectionStart || inputValue.length;
@@ -629,7 +864,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             chatHistory: [],
             timestamp: Date.now()
         };
-        setSessions(prev => [newSession, ...prev]);
+        setSessions(prev => [...prev, newSession]);
         setCurrentSessionId(newSession.id);
         setMessages([]);
         setChatHistory([]);
@@ -638,8 +873,19 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
 
     const deleteSession = (sessionId: string) => {
         if (sessions.length <= 1) {
-            // 如果只有一个session，创建一个新的
-            createNewSession();
+            // 如果只有一个session，删除它意味着创建一个新的并替换
+            const newSession: Session = {
+                id: `session-${Date.now()}`,
+                name: '新对话',
+                messages: [],
+                chatHistory: [],
+                timestamp: Date.now()
+            };
+            setSessions([newSession]);
+            setCurrentSessionId(newSession.id);
+            setMessages([]);
+            setChatHistory([]);
+            setReferencedFiles([]);
             return;
         }
         setSessions(prev => {
@@ -702,7 +948,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             const m = msgs[i];
             if (!m) continue;
 
-            if (m.type === 'tool_result' && m.tool !== 'writeFile') { // writeFile 单独展示，不折叠
+            if ((m.type === 'tool_result' && m.tool !== 'writeFile') || m.type === 'thinking') {
                 currentGroup.push(m);
             } else {
                 // 如果当前有堆积的group，先push
@@ -734,7 +980,74 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         return result;
     };
 
+    const CollapsibleToolGroup = ({ messages }: { messages: Message[] }) => {
+        const [isExpanded, setIsExpanded] = useState(false);
+        
+        return (
+            <div style={{ marginBottom: '16px', padding: '0 44px' }}>
+                <div 
+                    onClick={() => setIsExpanded(!isExpanded)}
+                    style={{
+                        fontSize: '12px',
+                        color: 'var(--text-muted)',
+                        backgroundColor: 'var(--background-primary-alt)',
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--background-modifier-border)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        userSelect: 'none'
+                    }}
+                >
+                    <div style={{ 
+                        transition: 'transform 0.2s', 
+                        transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)', 
+                        display: 'flex', alignItems: 'center'
+                    }}>
+                        <ChevronDownIcon size={12} />
+                    </div>
+                    <ToolIcon size={12} />
+                    <span>已执行 {messages.length} 项操作...</span>
+                </div>
+                
+                {isExpanded && (
+                    <div style={{ 
+                        marginTop: '8px', 
+                        paddingLeft: '12px', 
+                        borderLeft: '2px solid var(--background-modifier-border)',
+                        marginLeft: '12px'
+                    }}>
+                        {messages.map((m, idx) => (
+                            <div key={m.id || idx} style={{ marginBottom: '8px' }}>
+                                <div style={{ fontSize: '12px', color: 'var(--text-normal)' }}>
+                                    {m.type === 'thinking' ? (
+                                        <span style={{color: 'var(--text-muted)'}}>{m.content}</span>
+                                    ) : (
+                                        <div style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', backgroundColor: 'var(--background-secondary)', padding: '4px', borderRadius: '4px' }}>
+                                            {m.content}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     const displayedMessages = processMessages(messages);
+    
+    // Calculate index of the LAST user message
+    let lastUserMessageIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i] && messages[i]!.role === 'user') {
+            lastUserMessageIndex = i;
+            break;
+        }
+    }
 
     return (
         <div className="voyaru-chat-container" style={{ 
@@ -836,17 +1149,28 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                         onClick={createNewSession}
                         style={{
                             padding: '6px',
-                            borderRadius: '12px',
-                            border: '1px solid var(--background-modifier-border)',
-                            backgroundColor: 'var(--background-primary)',
+                            border: 'none',
+                            background: 'transparent',
+                            backgroundColor: 'transparent',
                             cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            color: 'var(--text-normal)'
+                            color: 'var(--text-muted)',
+                            transition: 'color 0.2s, opacity 0.2s',
+                            opacity: 0.6
                         }}
+                        onMouseEnter={e => {
+                            e.currentTarget.style.color = 'var(--text-normal)';
+                            e.currentTarget.style.opacity = '1';
+                        }}
+                        onMouseLeave={e => {
+                            e.currentTarget.style.color = 'var(--text-muted)';
+                            e.currentTarget.style.opacity = '0.6';
+                        }}
+                        title="新建对话"
                     >
-                        <PlusIcon size={14} />
+                        <PlusIcon size={16} />
                     </button>
                 </div>
 
@@ -922,25 +1246,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                 {displayedMessages.map((item, i) => {
                     if ('messages' in item) { // Tool Group
                         const group = item as { type: 'tool_group', messages: Message[], id: string };
-                        return (
-                            <div key={group.id} style={{ marginBottom: '16px', padding: '0 44px' }}>
-                                <div style={{
-                                    fontSize: '12px',
-                                    color: 'var(--text-muted)',
-                                    backgroundColor: 'var(--background-primary-alt)',
-                                    padding: '8px 12px',
-                                    borderRadius: '8px',
-                                    border: '1px solid var(--background-modifier-border)',
-                                    cursor: 'pointer', // Could act as accordion later
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '6px'
-                                }}>
-                                    <ToolIcon size={12} />
-                                    <span>Executed {group.messages.length} tools...</span>
-                                </div>
-                            </div>
-                        );
+                        return <CollapsibleToolGroup key={group.id} messages={group.messages} />;
                     } else { // Single Message
                         const m = item as Message;
                         if (m.type === 'tool_result' && m.tool === 'writeFile') {
@@ -949,6 +1255,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                              const content = args.content || "";
                              const path = args.path || "Untitled";
                              const wordCount = content.length; // Approximate char count
+                             const isUpdated = m.toolData && m.toolData.undoData; // If undoData exists, it means write was successful and tracked
                              
                              return (
                                 <div key={m.id || i} style={{ marginBottom: '16px', display: 'flex', justifyContent: 'flex-start', paddingLeft: '44px' }}>
@@ -962,7 +1269,38 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                         cursor: 'pointer'
                                     }}
                                     onClick={async () => {
-                                        await plugin.app.workspace.openLinkText(path, '', true);
+                                        try {
+                                            // 尝试解析文件
+                                            let file = plugin.app.vault.getAbstractFileByPath(path);
+                                            if (!file) {
+                                                file = plugin.app.metadataCache.getFirstLinkpathDest(path, '');
+                                            }
+
+                                            if (file instanceof TFile) {
+                                            // 查找是否已在某个 Leaf 打开
+                                            let foundLeaf: any = null;
+                                            if (plugin.app && plugin.app.workspace) {
+                                                plugin.app.workspace.iterateAllLeaves((leaf: any) => {
+                                                    if (leaf.view && leaf.view instanceof MarkdownView && leaf.view.file && leaf.view.file.path === file.path) {
+                                                        foundLeaf = leaf;
+                                                    }
+                                                });
+                                            }
+
+                                                if (foundLeaf) {
+                                                    plugin.app.workspace.setActiveLeaf(foundLeaf, { focus: true });
+                                                } else {
+                                                    // 未打开，新建标签页打开
+                                                    await plugin.app.workspace.getLeaf(true).openFile(file);
+                                                }
+                                            } else {
+                                                // 降级处理
+                                                await plugin.app.workspace.openLinkText(path, '', true);
+                                            }
+                                        } catch (e) {
+                                            console.error("Failed to open file:", e);
+                                            await plugin.app.workspace.openLinkText(path, '', true);
+                                        }
                                     }}
                                     onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
                                     onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
@@ -979,8 +1317,11 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                             <span style={{ fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{path}</span>
                                         </div>
                                         <div style={{ padding: '12px', fontSize: '12px', color: 'var(--text-muted)' }}>
-                                            <div>Writing to file...</div>
-                                            <div style={{ marginTop: '4px' }}>{wordCount} characters</div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-success)' }}>
+                                                <CheckIcon size={14} />
+                                                <span>文件已更新</span>
+                                            </div>
+                                            <div style={{ marginTop: '4px' }}>{wordCount} 字符</div>
                                         </div>
                                     </div>
                                 </div>
@@ -1041,12 +1382,23 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                                 <span>思考中</span>
                                             </div>
                                         )}
+                                        {/* Actions for User Message - only show for the LAST user message */}
+                                        {m.role === 'user' && i === lastUserMessageIndex && (
+                                            <div 
+                                                className="clickable-icon"
+                                                onClick={() => handleEditUserMessage(m.id!, m.content, m.referencedFiles || [])}
+                                                style={{ marginLeft: 'auto', cursor: 'pointer', opacity: 0.7 }}
+                                                title="修改并重新发送"
+                                            >
+                                                <EditIcon size={14} />
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Bubble */}
                                     <div style={{
                                         padding: '12px 16px',
-                                        borderRadius: '12px', // Rounded
+                                        borderRadius: '12px',
                                         backgroundColor: m.role === 'user' 
                                             ? 'var(--interactive-accent)' 
                                             : m.role === 'error'
@@ -1067,13 +1419,39 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                         wordBreak: 'break-word',
                                         fontSize: '1em',
                                         lineHeight: '1.6',
-                                        boxShadow: '0 1px 2px rgba(0,0,0,0.05)' // Flat-ish shadow
+                                        boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
                                     }}>
                                         {m.content}
+                                        {/* Referenced Files Display in Bubble */}
+                                        {m.role === 'user' && m.referencedFiles && m.referencedFiles.length > 0 && (
+                                            <div style={{ 
+                                                marginTop: '8px', 
+                                                paddingTop: '8px', 
+                                                borderTop: '1px solid rgba(255,255,255,0.2)',
+                                                fontSize: '0.85em',
+                                                display: 'flex',
+                                                flexWrap: 'wrap',
+                                                gap: '6px'
+                                            }}>
+                                                {m.referencedFiles.map(rf => (
+                                                    <div key={rf} style={{ 
+                                                        display: 'inline-flex', 
+                                                        alignItems: 'center', 
+                                                        gap: '4px',
+                                                        backgroundColor: 'rgba(0,0,0,0.1)',
+                                                        padding: '2px 6px',
+                                                        borderRadius: '4px'
+                                                    }}>
+                                                        <FileIcon size={10} />
+                                                        <span>{rf}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
 
-                                    {/* Action Bar (Only for Model Text messages) */}
-                                    {m.role === 'model' && m.type === 'text' && (
+                                    {/* Action Bar (Only for Model Text messages) - only show when not loading */ }
+                                    {m.role === 'model' && m.type === 'text' && !isLoading && (
                                         <div style={{
                                             display: 'flex',
                                             gap: '8px',
@@ -1087,10 +1465,17 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                             <button className="clickable-icon" onClick={() => handleCopy(m.content)} title="复制" style={{ background: 'none', border: 'none', padding: '4px', cursor: 'pointer', color: 'var(--text-muted)' }}>
                                                 <CopyIcon size={14} />
                                             </button>
-                                            <button className="clickable-icon" onClick={() => handleCopyToNote(m.content)} title="插入到笔记" style={{ background: 'none', border: 'none', padding: '4px', cursor: 'pointer', color: 'var(--text-muted)' }}>
-                                                <EditIcon size={14} />
+                                            <button className="clickable-icon" onClick={() => handleExport(m.content)} title="导出到笔记" style={{ background: 'none', border: 'none', padding: '4px', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                                                <ExportIcon size={14} />
                                             </button>
-                                            {/* Log/Debug button could be added here if needed */}
+                                            <button className="clickable-icon" onClick={() => m.id && handleRegenerate(m.id)} title="重新生成" style={{ background: 'none', border: 'none', padding: '4px', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                                                <RefreshIcon size={14} />
+                                            </button>
+                                            {m.toolData?.logs && (
+                                                <button className="clickable-icon" onClick={() => m.toolData?.logs && handleShowLogs(m.toolData.logs)} title="查看日志" style={{ background: 'none', border: 'none', padding: '4px', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                                                    <LogIcon size={14} />
+                                                </button>
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -1202,7 +1587,68 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     </div>
                  )}
 
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+                {/* Input Container - Sleek Pill Shape */}
+                <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    backgroundColor: 'var(--background-primary)',
+                    borderRadius: '16px', // Large radius for pill look
+                    border: '1px solid var(--background-modifier-border)',
+                    padding: '4px 12px',
+                    gap: '4px',
+                    transition: 'border-color 0.2s, box-shadow 0.2s',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.05)'
+                }}
+                onFocusCapture={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--interactive-accent)';
+                    e.currentTarget.style.boxShadow = '0 0 0 2px rgba(var(--interactive-accent-rgb), 0.1)';
+                }}
+                onBlurCapture={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--background-modifier-border)';
+                    e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.05)';
+                }}
+                >
+                    {/* Referenced Files inside input */}
+                    {referencedFiles.length > 0 && (
+                        <div style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '6px',
+                            paddingTop: '8px',
+                            paddingBottom: '4px'
+                        }}>
+                            {referencedFiles.map(f => {
+                                const filePath = f.split(':')[0];
+                                return (
+                                    <div
+                                        key={f}
+                                        style={{ 
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                            background: 'var(--background-modifier-hover)', // Slightly darker
+                                            padding: '2px 8px', 
+                                            borderRadius: '6px',
+                                            fontSize: '0.8em',
+                                            cursor: 'pointer',
+                                            color: 'var(--text-normal)'
+                                        }}
+                                    >
+                                        <FileIcon size={12} />
+                                        <span>{filePath}</span>
+                                        <div onClick={(e) => {
+                                            e.stopPropagation();
+                                            setReferencedFiles(prev => prev.filter(x => x !== f));
+                                        }} style={{ cursor: 'pointer', marginLeft: '4px', opacity: 0.6 }}>
+                                            <CloseIcon size={10} />
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {/* Text Area */}
                     <textarea 
                         ref={inputRef}
                         value={inputValue}
@@ -1210,36 +1656,160 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                         onKeyDown={handleKeyDown}
                         placeholder="向 Voyaru 提问..."
                         style={{ 
-                            flex: 1,
-                            minHeight: '48px', 
+                            width: '100%',
+                            minHeight: '40px', 
                             maxHeight: '160px',
                             resize: 'none',
-                            padding: '10px 14px',
-                            borderRadius: '12px',
-                            border: '1px solid var(--background-modifier-border)',
+                            padding: '8px 0',
+                            border: 'none',
+                            outline: 'none',
+                            background: 'transparent',
                             fontFamily: 'inherit',
                             fontSize: 'inherit',
-                            backgroundColor: 'var(--background-primary)',
                             color: 'var(--text-normal)',
-                            lineHeight: '1.5'
+                            lineHeight: '1.5',
+                            boxShadow: 'none' // Override default focus
                         }}
                     />
-                    <button 
-                        onClick={handleSendMessage} 
-                        disabled={isLoading} 
-                        style={{ 
-                            padding: '10px',
-                            borderRadius: '12px',
-                            border: 'none',
-                            backgroundColor: isLoading ? 'var(--background-modifier-border)' : 'var(--interactive-accent)',
-                            color: isLoading ? 'var(--text-muted)' : 'var(--text-on-accent)',
-                            cursor: isLoading ? 'not-allowed' : 'pointer',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            height: '42px', width: '42px'
-                        }}
-                    >
-                        {isLoading ? <StopIcon size={18} /> : <SendIcon size={18} />}
-                    </button>
+
+                    {/* Bottom Bar: Model Selector, Actions, Send */}
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        paddingBottom: '4px',
+                        paddingTop: '4px'
+                    }}>
+                        {/* Left: Model Selector */}
+                        <div style={{ position: 'relative' }} ref={modelSelectorRef}>
+                            <div 
+                                onClick={() => setShowModelSelector(!showModelSelector)}
+                                style={{ 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    gap: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '0.85em',
+                                    color: 'var(--text-muted)',
+                                    padding: '4px 8px 4px 0',
+                                    userSelect: 'none',
+                                    borderRadius: '6px',
+                                    transition: 'color 0.2s'
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.color = 'var(--text-normal)'}
+                                onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+                                title="选择模型"
+                            >
+                                <span>{MODELS.find(m => m.id === selectedModel)?.name}</span>
+                                <ChevronDownIcon size={12} />
+                            </div>
+
+                            {showModelSelector && (
+                                <div style={{
+                                    position: 'absolute',
+                                    bottom: '100%',
+                                    left: 0,
+                                    marginBottom: '8px',
+                                    minWidth: '200px',
+                                    backgroundColor: 'var(--background-primary)',
+                                    border: '1px solid var(--background-modifier-border)',
+                                    borderRadius: '8px',
+                                    boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+                                    zIndex: 1001,
+                                    padding: '4px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '2px'
+                                }}>
+                                    {MODELS.map(model => (
+                                        <div 
+                                            key={model.id}
+                                            onClick={() => {
+                                                setSelectedModel(model.id);
+                                                setShowModelSelector(false);
+                                            }}
+                                            style={{
+                                                padding: '6px 8px',
+                                                borderRadius: '6px',
+                                                cursor: 'pointer',
+                                                fontSize: '0.9em',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                backgroundColor: selectedModel === model.id ? 'var(--background-modifier-active-hover)' : 'transparent',
+                                                color: 'var(--text-normal)',
+                                                transition: 'background-color 0.1s'
+                                            }}
+                                            onMouseEnter={e => {
+                                                if (selectedModel !== model.id) e.currentTarget.style.backgroundColor = 'var(--background-modifier-hover)';
+                                            }}
+                                            onMouseLeave={e => {
+                                                if (selectedModel !== model.id) e.currentTarget.style.backgroundColor = 'transparent';
+                                            }}
+                                        >
+                                            <span>{model.name}</span>
+                                            {selectedModel === model.id && <CheckIcon size={14} />}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Right: Actions & Send */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            {/* Action Icons */}
+                            <div style={{ display: 'flex', gap: '10px', color: 'var(--text-muted)' }}>
+                                <div 
+                                    className="clickable-icon" 
+                                    onClick={() => {
+                                        setInputValue(prev => prev + "#");
+                                        setShowTools(true);
+                                        setFilteredTools(plugin.settings.tools); // Load all tools
+                                        // Need to focus and update state properly
+                                        setTimeout(() => inputRef.current?.focus(), 0);
+                                    }} 
+                                    title="工具 (#)"
+                                    style={{ cursor: 'pointer', opacity: 0.8 }}
+                                >
+                                    <ToolIcon size={16} />
+                                </div>
+                                <div 
+                                    className="clickable-icon" 
+                                    onClick={() => {
+                                        // Manually trigger @ menu
+                                        setInputValue(prev => prev + "@");
+                                        setShowFiles(true);
+                                        // Need to focus and update state properly
+                                        setTimeout(() => inputRef.current?.focus(), 0);
+                                    }} 
+                                    title="引用文件 (@)" 
+                                    style={{ cursor: 'pointer', opacity: 0.8 }}
+                                >
+                                    <MentionIcon size={16} />
+                                </div>
+                            </div>
+
+                            {/* Send Button */}
+                            <button 
+                                onClick={isLoading ? handleStopGeneration : () => handleSendMessage()} 
+                                style={{ 
+                                    padding: '0',
+                                    borderRadius: '50%',
+                                    border: 'none',
+                                    backgroundColor: isLoading ? 'var(--background-modifier-border)' : 'var(--text-normal)', // White/Contrast in dark mode usually
+                                    color: 'var(--background-primary)', // Inverted color for icon
+                                    cursor: 'pointer',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    height: '28px', width: '28px',
+                                    transition: 'all 0.2s ease',
+                                    marginLeft: '4px'
+                                }}
+                                title={isLoading ? "停止生成" : "发送"}
+                            >
+                                {isLoading ? <StopIcon size={14} /> : <ArrowUpIcon size={16} />}
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

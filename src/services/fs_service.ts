@@ -20,9 +20,10 @@ export class FSService {
         }
     }
 
-    async writeFile(path: string, content: string) {
+    async writeFile(path: string, content: string): Promise<string | null> {
         const normalized = normalizePath(path);
         let file = this.app.vault.getAbstractFileByPath(normalized);
+        let previousContent: string | null = null;
         
         // Ensure parent directory exists
         const parentDir = normalized.split('/').slice(0, -1).join('/');
@@ -31,12 +32,14 @@ export class FSService {
         }
 
         if (file instanceof TFile) {
+            previousContent = await this.app.vault.read(file);
             await this.app.vault.modify(file, content);
         } else if (!file) {
             await this.app.vault.create(normalized, content);
         } else {
              throw new Error(`Path ${path} exists but is not a file.`);
         }
+        return previousContent;
     }
 
     async readFile(path: string): Promise<string> {

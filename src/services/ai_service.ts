@@ -42,7 +42,7 @@ export class AIService {
         }
     }
 
-    async *streamChat(history: Content[], newMessage: string, referencedFiles: string[] = []): AsyncGenerator<any, void, unknown> {
+    async *streamChat(history: Content[], newMessage: string, referencedFiles: string[] = [], abortSignal?: AbortSignal): AsyncGenerator<any, void, unknown> {
         try {
         // 检查API Key
         const trimmedKey = this.settings.apiKey?.trim();
@@ -220,9 +220,16 @@ export class AIService {
 
         // Loop for tool calls
         while (true) {
+            if (abortSignal?.aborted) {
+                yield { type: "error", content: "生成已取消" };
+                return;
+            }
+
             let stream;
             try {
                 console.log('Sending message to Gemini API, model:', this.settings.model);
+                // Note: The @google/genai SDK stream method might not directly accept AbortSignal in options yet?
+                // But we can check abort status in the loop.
                 stream = await chat.sendMessageStream({ message: msgToSend });
                 console.log('Received response stream from Gemini API');
             } catch (e: any) {
@@ -239,6 +246,10 @@ export class AIService {
             
             try {
                 for await (const chunk of stream) {
+                     if (abortSignal?.aborted) {
+                         yield { type: "error", content: "生成已取消" };
+                         return;
+                     }
                      const text = chunk.text;
                      if (text) {
                          hasReceivedText = true;
@@ -275,10 +286,17 @@ export class AIService {
                      // New SDK args might be object directly? Yes.
                      const toolArgs = args as any;
                      let output = "";
+                     let undoData: { previousContent: string | null, path: string } | undefined;
+
                      try {
                         if (name === "writeFile") {
-                            await this.fs.writeFile(toolArgs.path, toolArgs.content);
+                            // Capture previous content for undo
+                            const previousContent = await this.fs.writeFile(toolArgs.path, toolArgs.content);
                             output = `File ${toolArgs.path} written successfully.`;
+                            undoData = {
+                                previousContent: previousContent,
+                                path: toolArgs.path
+                            };
                         } else if (name === "readFile") {
                             output = await this.fs.readFile(toolArgs.path);
                         } else if (name === "deleteFile") {
@@ -291,7 +309,7 @@ export class AIService {
                          output = `Error executing ${name}: ${e.message}`;
                      }
                      
-                     yield { type: "tool_result", tool: name, result: output, args: toolArgs };
+                     yield { type: "tool_result", tool: name, result: output, args: toolArgs, undoData: undoData };
                      
                      functionResponses.push({
                          functionResponse: {
