@@ -230,6 +230,28 @@ available in the app when your plugin is enabled.
     background-color: transparent;
 }
 
+/* QA Group Styles for Sticky Header */
+.voyaru-qa-section {
+    position: relative;
+    margin-bottom: 24px;
+    border-bottom: 1px solid transparent;
+}
+
+.voyaru-qa-header {
+    position: sticky;
+    top: -16px; /* Offset for padding */
+    z-index: 10;
+    background-color: var(--background-primary);
+    padding-top: 16px; /* Match container padding */
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+    /* Create a fade effect or border when stuck could be nice, but simple bg is enough for now */
+}
+
+.voyaru-qa-content {
+    padding-left: 0;
+}
+
 .voyaru-message {
     margin-bottom: 16px;
     animation: fadeIn 0.2s ease-out;
