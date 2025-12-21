@@ -589,7 +589,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             plugin.aiService.updateSettings(plugin.settings);
 
             console.log('Calling streamChat with history length:', historyToUse.length);
-            const stream = plugin.aiService.streamChat(historyToUse, messageContent, newUserMsg.referencedFiles, abortControllerRef.current.signal);
+            const stream = plugin.aiService.streamChat(currentSessionId, historyToUse, messageContent, newUserMsg.referencedFiles, abortControllerRef.current.signal);
 
             let currentResponseId = `msg-${Date.now()}-response`;
             let currentResponseContent = ""; // Accumulate text for the current message ID
@@ -976,6 +976,11 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         // 第二次点击：真正删除
         setDeletingSessionId(null);
         
+        // Notify Server Mode to clear context
+        if (plugin.aiService) {
+             plugin.aiService.clearSession(sessionId);
+        }
+        
         if (sessions.length <= 1) {
             // 如果只有一个session，删除它意味着创建一个新的并替换
             const newSession: Session = {
@@ -1019,6 +1024,11 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         
         // 第二次点击：真正清空
         setClearHistoryConfirm(false);
+        
+        // Notify Server Mode to clear context
+        if (currentSessionId && plugin.aiService) {
+             plugin.aiService.clearSession(currentSessionId);
+        }
         
         // 清空当前会话的消息和历史
         setMessages([]);

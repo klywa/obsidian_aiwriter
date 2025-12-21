@@ -208,7 +208,7 @@ export default class VoyaruPlugin extends Plugin {
             
             // 构建特殊的system prompt
             // 基于已有的 system prompt 增强
-            const baseSystemPrompt = this.settings.systemPrompt || "";
+            const baseSystemPrompt = this.aiService.getProcessedSystemPrompt();
             const localEditPrompt = `${baseSystemPrompt}
 
 你是一个文本编辑助手。用户要求你对文档中的特定部分进行修改。
@@ -243,7 +243,9 @@ ${contextAfter}
             this.localEditStatusModal.updateStatus("正在生成修改...");
 
             // 调用AI服务
-            const stream = this.aiService.streamChat([], localEditPrompt, []);
+            // 使用临时session ID，确保局部修改独立
+            const tempSessionId = `localedit-${Date.now()}`;
+            const stream = this.aiService.streamChat(tempSessionId, [], localEditPrompt, []);
             let modifiedContent = "";
 
             for await (const chunk of stream) {

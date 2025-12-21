@@ -49,6 +49,7 @@ export interface VoyaruSettings {
     sessions: Session[];
     lastSessionId: string | null;
     fontSize: number;
+    contextMode: 'wysiwyg' | 'server';
 }
 
 export const DEFAULT_TOOLS: AgentTool[] = [
@@ -158,7 +159,8 @@ Let's extra discard those non-pyrite snoozefests. Really just totally ignore eve
     tools: DEFAULT_TOOLS,
     sessions: [],
     lastSessionId: null,
-    fontSize: 14
+    fontSize: 14,
+    contextMode: 'wysiwyg'
 };
 
 export class VoyaruSettingTab extends PluginSettingTab {
@@ -217,6 +219,20 @@ export class VoyaruSettingTab extends PluginSettingTab {
 
         containerEl.createEl('h3', { text: 'Agent Configuration' });
         
+        new Setting(containerEl)
+            .setName('上下文模式')
+            .setDesc('选择上下文的管理方式')
+            .addDropdown(dropdown => {
+                dropdown
+                    .addOption('wysiwyg', '所见即所得 (完全同步)')
+                    .addOption('server', '服务器维护 (节省Token)')
+                    .setValue(this.plugin.settings.contextMode || 'wysiwyg')
+                    .onChange(async (value) => {
+                        this.plugin.settings.contextMode = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+
         new Setting(containerEl)
             .setName('System Prompt')
             .setDesc('The core instructions for the AI Agent.')

@@ -7,6 +7,7 @@ export class AIService {
     private genAI: GoogleGenAI | null = null;
     private fs: FSService;
     private settings: VoyaruSettings;
+    private activeChats: Map<string, any> = new Map();
 
     constructor(settings: VoyaruSettings, fs: FSService) {
         this.settings = settings;
@@ -42,7 +43,29 @@ export class AIService {
         }
     }
 
-    async *streamChat(history: Content[], newMessage: string, referencedFiles: string[] = [], abortSignal?: AbortSignal): AsyncGenerator<any, void, unknown> {
+    getProcessedSystemPrompt(): string {
+        let prompt = this.settings.systemPrompt || "";
+        const folders = this.settings.folders;
+        
+        if (folders) {
+            prompt = prompt.replace(/\{chapters\}/g, folders.chapters || "Chapters");
+            prompt = prompt.replace(/\{characters\}/g, folders.characters || "Characters");
+            prompt = prompt.replace(/\{outlines\}/g, folders.outlines || "Outlines");
+            prompt = prompt.replace(/\{notes\}/g, folders.notes || "Notes");
+            prompt = prompt.replace(/\{knowledge\}/g, folders.knowledge || "Knowledge");
+        }
+        
+        return prompt;
+    }
+
+    clearSession(sessionId: string) {
+        if (this.activeChats.has(sessionId)) {
+            this.activeChats.delete(sessionId);
+            console.log(`Cleared server-side context for session: ${sessionId}`);
+        }
+    }
+
+    async *streamChat(sessionId: string, history: Content[], newMessage: string, referencedFiles: string[] = [], abortSignal?: AbortSignal): AsyncGenerator<any, void, unknown> {
         try {
         // 检查API Key
         const trimmedKey = this.settings.apiKey?.trim();
@@ -133,85 +156,100 @@ export class AIService {
              },
            ];
            
-        // Use SDK's ChatSession to manage history and state automatically.
-        // This is CRITICAL for Thinking models to preserve 'thought_signature' in history.
-        // We initialize with the PREVIOUS history (not including current turn).
-        // Filter history to ensure only valid roles are passed
-        const validRoles = ['user', 'model'];
-        let cleanHistory = history.filter(h => h.role && validRoles.includes(h.role));
-        
-        // Sanitize history logic (same as before)
-        if (cleanHistory.length > 0) {
-            const lastMsg = cleanHistory[cleanHistory.length - 1];
-            // Check for trailing function call without response
-            // New SDK structure: parts is optional or null?
-            if (lastMsg && lastMsg.role === 'model' && lastMsg.parts?.some((p: any) => p.functionCall)) {
-                console.warn('Found trailing function call in history, removing it to prevent API error.');
-                cleanHistory.pop();
-            }
-        }
-        // Remove leading function response
-        if (cleanHistory.length > 0) {
-            const firstMsg = cleanHistory[0];
-            if (firstMsg && firstMsg.role === 'user' && firstMsg.parts?.some((p: any) => p.functionResponse)) {
-                 console.warn('Found leading function response in history, removing it to prevent API error.');
-                 cleanHistory.shift();
-            }
-        }
-        // Scan middle
-        const validatedHistory: Content[] = [];
-        let expectingFunctionResponse = false;
-        
-        for (const msg of cleanHistory) {
-            const hasFunctionCall = msg.role === 'model' && msg.parts?.some((p: any) => p.functionCall);
-            const hasFunctionResponse = msg.role === 'user' && msg.parts?.some((p: any) => p.functionResponse);
+        let chat;
+
+        // Check if we can reuse an existing chat session (Server Mode)
+        if (this.settings.contextMode === 'server' && sessionId && this.activeChats.has(sessionId)) {
+             chat = this.activeChats.get(sessionId);
+             console.log(`Using existing server-side context for session: ${sessionId}`);
+        } else {
+            // WYSIWYG Mode OR New Server Session: Initialize with provided history
             
-            if (expectingFunctionResponse) {
-                if (hasFunctionResponse) {
-                    validatedHistory.push(msg);
-                    expectingFunctionResponse = false;
+            // Use SDK's ChatSession to manage history and state automatically.
+            // This is CRITICAL for Thinking models to preserve 'thought_signature' in history.
+            // We initialize with the PREVIOUS history (not including current turn).
+            // Filter history to ensure only valid roles are passed
+            const validRoles = ['user', 'model'];
+            let cleanHistory = history.filter(h => h.role && validRoles.includes(h.role));
+            
+            // Sanitize history logic (same as before)
+            if (cleanHistory.length > 0) {
+                const lastMsg = cleanHistory[cleanHistory.length - 1];
+                // Check for trailing function call without response
+                // New SDK structure: parts is optional or null?
+                if (lastMsg && lastMsg.role === 'model' && lastMsg.parts?.some((p: any) => p.functionCall)) {
+                    console.warn('Found trailing function call in history, removing it to prevent API error.');
+                    cleanHistory.pop();
+                }
+            }
+            // Remove leading function response
+            if (cleanHistory.length > 0) {
+                const firstMsg = cleanHistory[0];
+                if (firstMsg && firstMsg.role === 'user' && firstMsg.parts?.some((p: any) => p.functionResponse)) {
+                     console.warn('Found leading function response in history, removing it to prevent API error.');
+                     cleanHistory.shift();
+                }
+            }
+            // Scan middle
+            const validatedHistory: Content[] = [];
+            let expectingFunctionResponse = false;
+            
+            for (const msg of cleanHistory) {
+                const hasFunctionCall = msg.role === 'model' && msg.parts?.some((p: any) => p.functionCall);
+                const hasFunctionResponse = msg.role === 'user' && msg.parts?.some((p: any) => p.functionResponse);
+                
+                if (expectingFunctionResponse) {
+                    if (hasFunctionResponse) {
+                        validatedHistory.push(msg);
+                        expectingFunctionResponse = false;
+                    } else {
+                        console.warn('Found broken function call chain (missing response), dropping previous call.');
+                        validatedHistory.pop(); 
+                        expectingFunctionResponse = false;
+                        
+                        if (hasFunctionCall) {
+                            validatedHistory.push(msg);
+                            expectingFunctionResponse = true;
+                        } else if (hasFunctionResponse) {
+                             console.warn('Found orphaned function response, dropping.');
+                        } else {
+                            validatedHistory.push(msg);
+                        }
+                    }
                 } else {
-                    console.warn('Found broken function call chain (missing response), dropping previous call.');
-                    validatedHistory.pop(); 
-                    expectingFunctionResponse = false;
-                    
                     if (hasFunctionCall) {
                         validatedHistory.push(msg);
                         expectingFunctionResponse = true;
                     } else if (hasFunctionResponse) {
-                         console.warn('Found orphaned function response, dropping.');
+                        console.warn('Found orphaned function response, dropping.');
                     } else {
                         validatedHistory.push(msg);
                     }
                 }
-            } else {
-                if (hasFunctionCall) {
-                    validatedHistory.push(msg);
-                    expectingFunctionResponse = true;
-                } else if (hasFunctionResponse) {
-                    console.warn('Found orphaned function response, dropping.');
-                } else {
-                    validatedHistory.push(msg);
-                }
+            }
+            if (expectingFunctionResponse) {
+                 console.warn('History ended with function call, dropping it.');
+                 validatedHistory.pop();
+            }
+            cleanHistory = validatedHistory;
+    
+            console.log('Starting chat with clean history length:', cleanHistory.length);
+    
+            // Create chat using new SDK
+            chat = this.genAI.chats.create({
+                model: this.settings.model || "gemini-2.0-flash", // Ensure string
+                config: {
+                    systemInstruction: this.getProcessedSystemPrompt(),
+                    tools: tools,
+                },
+                history: cleanHistory
+            });
+
+            if (this.settings.contextMode === 'server' && sessionId) {
+                 this.activeChats.set(sessionId, chat);
+                 console.log(`Created new server-side context for session: ${sessionId}`);
             }
         }
-        if (expectingFunctionResponse) {
-             console.warn('History ended with function call, dropping it.');
-             validatedHistory.pop();
-        }
-        cleanHistory = validatedHistory;
-
-        console.log('Starting chat with clean history length:', cleanHistory.length);
-
-        // Create chat using new SDK
-        const chat = this.genAI.chats.create({
-            model: this.settings.model || "gemini-2.0-flash", // Ensure string
-            config: {
-                systemInstruction: this.settings.systemPrompt,
-                tools: tools,
-            },
-            history: cleanHistory
-        });
 
         // Construct current user message
         let msgToSend: Part[] | string = contextContent ? `${contextContent}\n\nUser Query: ${newMessage}` : newMessage;
