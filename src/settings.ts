@@ -50,6 +50,7 @@ export interface VoyaruSettings {
     lastSessionId: string | null;
     fontSize: number;
     contextMode: 'wysiwyg' | 'server';
+    referenceMode: 'content' | 'path';
 }
 
 export const DEFAULT_TOOLS: AgentTool[] = [
@@ -160,7 +161,8 @@ Let's extra discard those non-pyrite snoozefests. Really just totally ignore eve
     sessions: [],
     lastSessionId: null,
     fontSize: 14,
-    contextMode: 'wysiwyg'
+    contextMode: 'server',
+    referenceMode: 'path'
 };
 
 export class VoyaruSettingTab extends PluginSettingTab {
@@ -229,6 +231,20 @@ export class VoyaruSettingTab extends PluginSettingTab {
                     .setValue(this.plugin.settings.contextMode || 'wysiwyg')
                     .onChange(async (value) => {
                         this.plugin.settings.contextMode = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+
+        new Setting(containerEl)
+            .setName('引用方式')
+            .setDesc('选择引用文件时的处理方式')
+            .addDropdown(dropdown => {
+                dropdown
+                    .addOption('content', '全文引用 (直接发送内容)')
+                    .addOption('path', '路径引用 (让模型自己读取)')
+                    .setValue(this.plugin.settings.referenceMode || 'content')
+                    .onChange(async (value) => {
+                        this.plugin.settings.referenceMode = value;
                         await this.plugin.saveSettings();
                     });
             });

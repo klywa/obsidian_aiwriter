@@ -55,6 +55,20 @@ export class AIService {
             prompt = prompt.replace(/\{knowledge\}/g, folders.knowledge || "Knowledge");
         }
         
+        // 根据引用模式添加额外说明
+        if (this.settings.referenceMode === 'path') {
+            prompt += `\n\n### 📎 Referenced Files Handling
+When you see "📎 Referenced Files" in the user's message, those are file paths that the user wants you to consider.
+**Important**: The file contents are NOT included in the message. You MUST use the \`readFile\` tool to read each file before you can work with it.
+
+Example workflow:
+1. User mentions: "📎 Referenced Files: Chapters/第1回.md"
+2. You should: Call readFile("Chapters/第1回.md") to read the content
+3. Then: Process the content according to user's request
+
+Always read referenced files first before attempting to work with them.`;
+        }
+        
         return prompt;
     }
 
@@ -88,29 +102,48 @@ export class AIService {
             return;
         }
 
-        // Prepare context
+        // Prepare context based on reference mode
         let contextContent = "";
-        for (const fileRef of referencedFiles) {
-            try {
-                // 检查是否包含行数区间（格式：filepath:start-end）
-                const match = fileRef.match(/^(.+):(\d+)-(\d+)$/);
-                if (match && match[1] && match[2] && match[3]) {
-                    const filePath = match[1]!;
-                    const startLineStr = match[2]!;
-                    const endLineStr = match[3]!;
-                    const startLine = parseInt(startLineStr) - 1; // 转换为0-based
-                    const endLine = parseInt(endLineStr) - 1;
-                    const content = await this.fs.readFile(filePath);
-                    const lines = content.split('\n');
-                    const selectedLines = lines.slice(startLine, endLine + 1);
-                    contextContent += `\n--- File: ${filePath} (Lines ${startLineStr}-${endLineStr}) ---\n${selectedLines.join('\n')}\n--- End of Selection ---\n`;
-                } else {
-                    // 没有行数区间，读取整个文件
-                    const content = await this.fs.readFile(fileRef);
-                    contextContent += `\n--- File: ${fileRef} ---\n${content}\n--- End of File ---\n`;
+        
+        if (this.settings.referenceMode === 'content') {
+            // 全文引用模式：直接读取并发送文件内容
+            for (const fileRef of referencedFiles) {
+                try {
+                    // 检查是否包含行数区间（格式：filepath:start-end）
+                    const match = fileRef.match(/^(.+):(\d+)-(\d+)$/);
+                    if (match && match[1] && match[2] && match[3]) {
+                        const filePath = match[1]!;
+                        const startLineStr = match[2]!;
+                        const endLineStr = match[3]!;
+                        const startLine = parseInt(startLineStr) - 1; // 转换为0-based
+                        const endLine = parseInt(endLineStr) - 1;
+                        const content = await this.fs.readFile(filePath);
+                        const lines = content.split('\n');
+                        const selectedLines = lines.slice(startLine, endLine + 1);
+                        contextContent += `\n--- File: ${filePath} (Lines ${startLineStr}-${endLineStr}) ---\n${selectedLines.join('\n')}\n--- End of Selection ---\n`;
+                    } else {
+                        // 没有行数区间，读取整个文件
+                        const content = await this.fs.readFile(fileRef);
+                        contextContent += `\n--- File: ${fileRef} ---\n${content}\n--- End of File ---\n`;
+                    }
+                } catch (e) {
+                    console.warn(`Failed to read referenced file ${fileRef}`, e);
                 }
-            } catch (e) {
-                console.warn(`Failed to read referenced file ${fileRef}`, e);
+            }
+        } else {
+            // 路径引用模式：只发送文件路径，让模型自己用 readFile 工具读取
+            if (referencedFiles.length > 0) {
+                contextContent = "\n📎 Referenced Files (use readFile tool to access):\n";
+                for (const fileRef of referencedFiles) {
+                    // 检查是否包含行数区间
+                    const match = fileRef.match(/^(.+):(\d+)-(\d+)$/);
+                    if (match && match[1] && match[2] && match[3]) {
+                        contextContent += `- ${match[1]} (Lines ${match[2]}-${match[3]})\n`;
+                    } else {
+                        contextContent += `- ${fileRef}\n`;
+                    }
+                }
+                contextContent += "\nPlease use the readFile tool to read the content of these files as needed.\n";
             }
         }
         
@@ -161,79 +194,90 @@ export class AIService {
         // Check if we can reuse an existing chat session (Server Mode)
         if (this.settings.contextMode === 'server' && sessionId && this.activeChats.has(sessionId)) {
              chat = this.activeChats.get(sessionId);
-             console.log(`Using existing server-side context for session: ${sessionId}`);
+             console.log(`🔄 [Server Mode] Reusing existing chat for session: ${sessionId}`);
         } else {
-            // WYSIWYG Mode OR New Server Session: Initialize with provided history
+            // WYSIWYG Mode OR New Server Session: Initialize chat
             
-            // Use SDK's ChatSession to manage history and state automatically.
-            // This is CRITICAL for Thinking models to preserve 'thought_signature' in history.
-            // We initialize with the PREVIOUS history (not including current turn).
-            // Filter history to ensure only valid roles are passed
-            const validRoles = ['user', 'model'];
-            let cleanHistory = history.filter(h => h.role && validRoles.includes(h.role));
+            let cleanHistory: Content[];
             
-            // Sanitize history logic (same as before)
-            if (cleanHistory.length > 0) {
-                const lastMsg = cleanHistory[cleanHistory.length - 1];
-                // Check for trailing function call without response
-                // New SDK structure: parts is optional or null?
-                if (lastMsg && lastMsg.role === 'model' && lastMsg.parts?.some((p: any) => p.functionCall)) {
-                    console.warn('Found trailing function call in history, removing it to prevent API error.');
-                    cleanHistory.pop();
-                }
-            }
-            // Remove leading function response
-            if (cleanHistory.length > 0) {
-                const firstMsg = cleanHistory[0];
-                if (firstMsg && firstMsg.role === 'user' && firstMsg.parts?.some((p: any) => p.functionResponse)) {
-                     console.warn('Found leading function response in history, removing it to prevent API error.');
-                     cleanHistory.shift();
-                }
-            }
-            // Scan middle
-            const validatedHistory: Content[] = [];
-            let expectingFunctionResponse = false;
-            
-            for (const msg of cleanHistory) {
-                const hasFunctionCall = msg.role === 'model' && msg.parts?.some((p: any) => p.functionCall);
-                const hasFunctionResponse = msg.role === 'user' && msg.parts?.some((p: any) => p.functionResponse);
+            if (this.settings.contextMode === 'server') {
+                // Server Mode: Start with EMPTY history, let SDK maintain context from now on
+                cleanHistory = [];
+                console.log(`🆕 [Server Mode] Creating new chat with EMPTY history for session: ${sessionId}`);
+            } else {
+                // WYSIWYG Mode: Use provided history to sync with UI
+                console.log(`📋 [WYSIWYG Mode] Processing history with length: ${history.length}`);
                 
-                if (expectingFunctionResponse) {
-                    if (hasFunctionResponse) {
-                        validatedHistory.push(msg);
-                        expectingFunctionResponse = false;
+                // Use SDK's ChatSession to manage history and state automatically.
+                // This is CRITICAL for Thinking models to preserve 'thought_signature' in history.
+                // We initialize with the PREVIOUS history (not including current turn).
+                // Filter history to ensure only valid roles are passed
+                const validRoles = ['user', 'model'];
+                cleanHistory = history.filter(h => h.role && validRoles.includes(h.role));
+                
+                // Sanitize history logic (same as before)
+                if (cleanHistory.length > 0) {
+                    const lastMsg = cleanHistory[cleanHistory.length - 1];
+                    // Check for trailing function call without response
+                    // New SDK structure: parts is optional or null?
+                    if (lastMsg && lastMsg.role === 'model' && lastMsg.parts?.some((p: any) => p.functionCall)) {
+                        console.warn('Found trailing function call in history, removing it to prevent API error.');
+                        cleanHistory.pop();
+                    }
+                }
+                // Remove leading function response
+                if (cleanHistory.length > 0) {
+                    const firstMsg = cleanHistory[0];
+                    if (firstMsg && firstMsg.role === 'user' && firstMsg.parts?.some((p: any) => p.functionResponse)) {
+                         console.warn('Found leading function response in history, removing it to prevent API error.');
+                         cleanHistory.shift();
+                    }
+                }
+                // Scan middle
+                const validatedHistory: Content[] = [];
+                let expectingFunctionResponse = false;
+                
+                for (const msg of cleanHistory) {
+                    const hasFunctionCall = msg.role === 'model' && msg.parts?.some((p: any) => p.functionCall);
+                    const hasFunctionResponse = msg.role === 'user' && msg.parts?.some((p: any) => p.functionResponse);
+                    
+                    if (expectingFunctionResponse) {
+                        if (hasFunctionResponse) {
+                            validatedHistory.push(msg);
+                            expectingFunctionResponse = false;
+                        } else {
+                            console.warn('Found broken function call chain (missing response), dropping previous call.');
+                            validatedHistory.pop(); 
+                            expectingFunctionResponse = false;
+                            
+                            if (hasFunctionCall) {
+                                validatedHistory.push(msg);
+                                expectingFunctionResponse = true;
+                            } else if (hasFunctionResponse) {
+                                 console.warn('Found orphaned function response, dropping.');
+                            } else {
+                                validatedHistory.push(msg);
+                            }
+                        }
                     } else {
-                        console.warn('Found broken function call chain (missing response), dropping previous call.');
-                        validatedHistory.pop(); 
-                        expectingFunctionResponse = false;
-                        
                         if (hasFunctionCall) {
                             validatedHistory.push(msg);
                             expectingFunctionResponse = true;
                         } else if (hasFunctionResponse) {
-                             console.warn('Found orphaned function response, dropping.');
+                            console.warn('Found orphaned function response, dropping.');
                         } else {
                             validatedHistory.push(msg);
                         }
                     }
-                } else {
-                    if (hasFunctionCall) {
-                        validatedHistory.push(msg);
-                        expectingFunctionResponse = true;
-                    } else if (hasFunctionResponse) {
-                        console.warn('Found orphaned function response, dropping.');
-                    } else {
-                        validatedHistory.push(msg);
-                    }
                 }
+                if (expectingFunctionResponse) {
+                     console.warn('History ended with function call, dropping it.');
+                     validatedHistory.pop();
+                }
+                cleanHistory = validatedHistory;
+        
+                console.log(`✅ [WYSIWYG Mode] Clean history length: ${cleanHistory.length}`);
             }
-            if (expectingFunctionResponse) {
-                 console.warn('History ended with function call, dropping it.');
-                 validatedHistory.pop();
-            }
-            cleanHistory = validatedHistory;
-    
-            console.log('Starting chat with clean history length:', cleanHistory.length);
     
             // Create chat using new SDK
             chat = this.genAI.chats.create({
@@ -247,7 +291,7 @@ export class AIService {
 
             if (this.settings.contextMode === 'server' && sessionId) {
                  this.activeChats.set(sessionId, chat);
-                 console.log(`Created new server-side context for session: ${sessionId}`);
+                 console.log(`💾 [Server Mode] Saved chat to activeChats for session: ${sessionId}`);
             }
         }
 

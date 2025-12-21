@@ -330,46 +330,9 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     useEffect(() => {
         if (messages.length === 0) return;
         
-        // 如果正在加载（发送消息过程中）
-        if (isLoading) {
-            // 持续尝试将最新的用户消息置顶
-            if (lastUserMessageIdRef.current && messagesEndRef.current) {
-                const el = document.getElementById(lastUserMessageIdRef.current);
-                const container = messagesEndRef.current.parentElement;
-                
-                if (el && container) {
-                    // 使用 requestAnimationFrame 确保在渲染后执行滚动
-                    requestAnimationFrame(() => {
-                        // 尝试找到父级 section (QA分组)
-                        const section = el.closest('.voyaru-qa-section') as HTMLElement;
-                        // 如果有 section，定位到 section 顶部；否则定位到元素顶部
-                        // 使用 offsetTop 时需注意，如果是 sticky 元素，offsetTop 是相对于 offsetParent 的
-                        // 这里 section 是 relative，container 是 relative/scroll parent
-                        // section.offsetTop 应该是相对于 container 的 (如果中间没有其他 positioned 元素)
-                        
-                        let targetTop = 0;
-                        if (section) {
-                             targetTop = section.offsetTop - 10;
-                        } else {
-                             // Fallback: calculate relative offset manually if nested
-                             let current: HTMLElement | null = el;
-                             let top = 0;
-                             while(current && current !== container) {
-                                 top += current.offsetTop;
-                                 current = current.offsetParent as HTMLElement;
-                             }
-                             targetTop = top - 10;
-                        }
-
-                        // 只有当偏差较大时才强制修正，避免微小抖动
-                        if (Math.abs(container.scrollTop - targetTop) > 5) {
-                            container.scrollTop = targetTop;
-                        }
-                    });
-                }
-            }
-        } else {
-            // 非加载状态，滚动到底部
+        // 只在非加载状态（对话完成后）滚动到底部
+        // 加载状态下的滚动由 handleSendMessage 和 scheduleUpdate/flushUpdate 处理
+        if (!isLoading) {
             scrollToBottom();
         }
     }, [messages, isLoading]);
@@ -560,6 +523,31 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         if (!manualFiles) setReferencedFiles([]);
         setIsLoading(true);
 
+        // 立即尝试将新消息滚动到顶部
+        setTimeout(() => {
+            if (lastUserMessageIdRef.current && messagesEndRef.current) {
+                const el = document.getElementById(lastUserMessageIdRef.current);
+                const container = messagesEndRef.current.parentElement;
+                
+                if (el && container) {
+                    const section = el.closest('.voyaru-qa-section') as HTMLElement;
+                    let targetTop = 0;
+                    if (section) {
+                        targetTop = section.offsetTop - 10;
+                    } else {
+                        let current: HTMLElement | null = el;
+                        let top = 0;
+                        while(current && current !== container) {
+                            top += current.offsetTop;
+                            current = current.offsetParent as HTMLElement;
+                        }
+                        targetTop = top - 10;
+                    }
+                    container.scrollTop = targetTop;
+                }
+            }
+        }, 0);
+
         // 更新当前session的消息（在发送时）
         if (currentSessionId) {
             setSessions(prev => prev.map(s => {
@@ -635,6 +623,13 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                         });
                         pendingUpdateContent = null;
                         pendingUpdateId = null;
+                        
+                        // 流式输出时持续滚动到最新内容
+                        requestAnimationFrame(() => {
+                            if (messagesEndRef.current) {
+                                messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                            }
+                        });
                     }
                 }, 50); 
             };
@@ -663,6 +658,13 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     });
                     pendingUpdateContent = null;
                     pendingUpdateId = null;
+                    
+                    // 流式输出时持续滚动到最新内容
+                    requestAnimationFrame(() => {
+                        if (messagesEndRef.current) {
+                            messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                        }
+                    });
                 }
             };
 
