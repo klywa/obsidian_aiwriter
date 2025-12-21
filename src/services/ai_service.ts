@@ -107,27 +107,27 @@ Always read referenced files first before attempting to work with them.`;
         
         if (this.settings.referenceMode === 'content') {
             // 全文引用模式：直接读取并发送文件内容
-            for (const fileRef of referencedFiles) {
-                try {
-                    // 检查是否包含行数区间（格式：filepath:start-end）
-                    const match = fileRef.match(/^(.+):(\d+)-(\d+)$/);
-                    if (match && match[1] && match[2] && match[3]) {
-                        const filePath = match[1]!;
-                        const startLineStr = match[2]!;
-                        const endLineStr = match[3]!;
-                        const startLine = parseInt(startLineStr) - 1; // 转换为0-based
-                        const endLine = parseInt(endLineStr) - 1;
-                        const content = await this.fs.readFile(filePath);
-                        const lines = content.split('\n');
-                        const selectedLines = lines.slice(startLine, endLine + 1);
-                        contextContent += `\n--- File: ${filePath} (Lines ${startLineStr}-${endLineStr}) ---\n${selectedLines.join('\n')}\n--- End of Selection ---\n`;
-                    } else {
-                        // 没有行数区间，读取整个文件
-                        const content = await this.fs.readFile(fileRef);
-                        contextContent += `\n--- File: ${fileRef} ---\n${content}\n--- End of File ---\n`;
-                    }
-                } catch (e) {
-                    console.warn(`Failed to read referenced file ${fileRef}`, e);
+        for (const fileRef of referencedFiles) {
+            try {
+                // 检查是否包含行数区间（格式：filepath:start-end）
+                const match = fileRef.match(/^(.+):(\d+)-(\d+)$/);
+                if (match && match[1] && match[2] && match[3]) {
+                    const filePath = match[1]!;
+                    const startLineStr = match[2]!;
+                    const endLineStr = match[3]!;
+                    const startLine = parseInt(startLineStr) - 1; // 转换为0-based
+                    const endLine = parseInt(endLineStr) - 1;
+                    const content = await this.fs.readFile(filePath);
+                    const lines = content.split('\n');
+                    const selectedLines = lines.slice(startLine, endLine + 1);
+                    contextContent += `\n--- File: ${filePath} (Lines ${startLineStr}-${endLineStr}) ---\n${selectedLines.join('\n')}\n--- End of Selection ---\n`;
+                } else {
+                    // 没有行数区间，读取整个文件
+                    const content = await this.fs.readFile(fileRef);
+                    contextContent += `\n--- File: ${fileRef} ---\n${content}\n--- End of File ---\n`;
+                }
+            } catch (e) {
+                console.warn(`Failed to read referenced file ${fileRef}`, e);
                 }
             }
         } else {
@@ -207,87 +207,87 @@ Always read referenced files first before attempting to work with them.`;
             } else {
                 // WYSIWYG Mode: Use provided history to sync with UI
                 console.log(`📋 [WYSIWYG Mode] Processing history with length: ${history.length}`);
-                
-                // Use SDK's ChatSession to manage history and state automatically.
-                // This is CRITICAL for Thinking models to preserve 'thought_signature' in history.
-                // We initialize with the PREVIOUS history (not including current turn).
-                // Filter history to ensure only valid roles are passed
-                const validRoles = ['user', 'model'];
+           
+        // Use SDK's ChatSession to manage history and state automatically.
+        // This is CRITICAL for Thinking models to preserve 'thought_signature' in history.
+        // We initialize with the PREVIOUS history (not including current turn).
+        // Filter history to ensure only valid roles are passed
+        const validRoles = ['user', 'model'];
                 cleanHistory = history.filter(h => h.role && validRoles.includes(h.role));
-                
-                // Sanitize history logic (same as before)
-                if (cleanHistory.length > 0) {
-                    const lastMsg = cleanHistory[cleanHistory.length - 1];
-                    // Check for trailing function call without response
-                    // New SDK structure: parts is optional or null?
-                    if (lastMsg && lastMsg.role === 'model' && lastMsg.parts?.some((p: any) => p.functionCall)) {
-                        console.warn('Found trailing function call in history, removing it to prevent API error.');
-                        cleanHistory.pop();
-                    }
-                }
-                // Remove leading function response
-                if (cleanHistory.length > 0) {
-                    const firstMsg = cleanHistory[0];
-                    if (firstMsg && firstMsg.role === 'user' && firstMsg.parts?.some((p: any) => p.functionResponse)) {
-                         console.warn('Found leading function response in history, removing it to prevent API error.');
-                         cleanHistory.shift();
-                    }
-                }
-                // Scan middle
-                const validatedHistory: Content[] = [];
-                let expectingFunctionResponse = false;
-                
-                for (const msg of cleanHistory) {
-                    const hasFunctionCall = msg.role === 'model' && msg.parts?.some((p: any) => p.functionCall);
-                    const hasFunctionResponse = msg.role === 'user' && msg.parts?.some((p: any) => p.functionResponse);
-                    
-                    if (expectingFunctionResponse) {
-                        if (hasFunctionResponse) {
-                            validatedHistory.push(msg);
-                            expectingFunctionResponse = false;
-                        } else {
-                            console.warn('Found broken function call chain (missing response), dropping previous call.');
-                            validatedHistory.pop(); 
-                            expectingFunctionResponse = false;
-                            
-                            if (hasFunctionCall) {
-                                validatedHistory.push(msg);
-                                expectingFunctionResponse = true;
-                            } else if (hasFunctionResponse) {
-                                 console.warn('Found orphaned function response, dropping.');
-                            } else {
-                                validatedHistory.push(msg);
-                            }
-                        }
-                    } else {
-                        if (hasFunctionCall) {
-                            validatedHistory.push(msg);
-                            expectingFunctionResponse = true;
-                        } else if (hasFunctionResponse) {
-                            console.warn('Found orphaned function response, dropping.');
-                        } else {
-                            validatedHistory.push(msg);
-                        }
-                    }
-                }
-                if (expectingFunctionResponse) {
-                     console.warn('History ended with function call, dropping it.');
-                     validatedHistory.pop();
-                }
-                cleanHistory = validatedHistory;
         
+        // Sanitize history logic (same as before)
+        if (cleanHistory.length > 0) {
+            const lastMsg = cleanHistory[cleanHistory.length - 1];
+            // Check for trailing function call without response
+            // New SDK structure: parts is optional or null?
+            if (lastMsg && lastMsg.role === 'model' && lastMsg.parts?.some((p: any) => p.functionCall)) {
+                console.warn('Found trailing function call in history, removing it to prevent API error.');
+                cleanHistory.pop();
+            }
+        }
+        // Remove leading function response
+        if (cleanHistory.length > 0) {
+            const firstMsg = cleanHistory[0];
+            if (firstMsg && firstMsg.role === 'user' && firstMsg.parts?.some((p: any) => p.functionResponse)) {
+                 console.warn('Found leading function response in history, removing it to prevent API error.');
+                 cleanHistory.shift();
+            }
+        }
+        // Scan middle
+        const validatedHistory: Content[] = [];
+        let expectingFunctionResponse = false;
+        
+        for (const msg of cleanHistory) {
+            const hasFunctionCall = msg.role === 'model' && msg.parts?.some((p: any) => p.functionCall);
+            const hasFunctionResponse = msg.role === 'user' && msg.parts?.some((p: any) => p.functionResponse);
+            
+            if (expectingFunctionResponse) {
+                if (hasFunctionResponse) {
+                    validatedHistory.push(msg);
+                    expectingFunctionResponse = false;
+                } else {
+                    console.warn('Found broken function call chain (missing response), dropping previous call.');
+                    validatedHistory.pop(); 
+                    expectingFunctionResponse = false;
+                    
+                    if (hasFunctionCall) {
+                        validatedHistory.push(msg);
+                        expectingFunctionResponse = true;
+                    } else if (hasFunctionResponse) {
+                         console.warn('Found orphaned function response, dropping.');
+                    } else {
+                        validatedHistory.push(msg);
+                    }
+                }
+            } else {
+                if (hasFunctionCall) {
+                    validatedHistory.push(msg);
+                    expectingFunctionResponse = true;
+                } else if (hasFunctionResponse) {
+                    console.warn('Found orphaned function response, dropping.');
+                } else {
+                    validatedHistory.push(msg);
+                }
+            }
+        }
+        if (expectingFunctionResponse) {
+             console.warn('History ended with function call, dropping it.');
+             validatedHistory.pop();
+        }
+        cleanHistory = validatedHistory;
+
                 console.log(`✅ [WYSIWYG Mode] Clean history length: ${cleanHistory.length}`);
             }
-    
-            // Create chat using new SDK
+
+        // Create chat using new SDK
             chat = this.genAI.chats.create({
-                model: this.settings.model || "gemini-2.0-flash", // Ensure string
-                config: {
+            model: this.settings.model || "gemini-2.0-flash", // Ensure string
+            config: {
                     systemInstruction: this.getProcessedSystemPrompt(),
-                    tools: tools,
-                },
-                history: cleanHistory
-            });
+                tools: tools,
+            },
+            history: cleanHistory
+        });
 
             if (this.settings.contextMode === 'server' && sessionId) {
                  this.activeChats.set(sessionId, chat);

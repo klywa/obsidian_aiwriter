@@ -248,7 +248,7 @@ export class VoyaruSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     });
             });
-
+        
         new Setting(containerEl)
             .setName('System Prompt')
             .setDesc('The core instructions for the AI Agent.')

@@ -69,8 +69,13 @@ export class FSService {
     }
 
     async listFilesRecursive(folderPath: string): Promise<string[]> {
-         const folder = this.app.vault.getAbstractFileByPath(normalizePath(folderPath));
-         if (!(folder instanceof TFolder)) return [];
+         const normalizedPath = normalizePath(folderPath);
+         const folder = this.app.vault.getAbstractFileByPath(normalizedPath);
+         
+         if (!(folder instanceof TFolder)) {
+             console.warn(`Folder not found or not a folder: ${folderPath}`);
+             return [];
+         }
          
          let files: string[] = [];
          // Simple recursive walker
@@ -84,6 +89,7 @@ export class FSService {
              }
          }
          walk(folder);
+         console.log(`📂 Found ${files.length} files in ${folderPath}`);
          return files;
     }
 }

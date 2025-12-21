@@ -398,9 +398,9 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         }
     };
 
-    // 加载所有文件（仅在首次显示时加载一次）
+    // 加载所有文件（每次显示时重新加载，确保能搜索到新创建的文件）
     useEffect(() => {
-        if (showFiles && !isFilesLoaded) {
+        if (showFiles) {
             const load = async () => {
                 try {
                     const f1 = await plugin.fsService.listFilesRecursive(plugin.settings.folders.chapters);
@@ -413,13 +413,14 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     const uniqueFiles = Array.from(new Set(all));
                     setAllFiles(uniqueFiles);
                     setIsFilesLoaded(true);
+                    console.log(`📁 Loaded ${uniqueFiles.length} files from 5 folders`);
                 } catch (e) {
                     console.error('Failed to load files:', e);
                 }
             };
             load();
         }
-    }, [showFiles, isFilesLoaded]); // 不依赖 inputValue
+    }, [showFiles]); // 每次 showFiles 变为 true 时都重新加载
 
     // 过滤文件列表（完全在内存中进行，极快）
     useEffect(() => {
