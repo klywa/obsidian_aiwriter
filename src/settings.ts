@@ -97,10 +97,11 @@ export const DEFAULT_SETTINGS: VoyaruSettings = {
 2. **修改现有文件**：如果用户要求修改，先使用 \`readFile\` 读取原内容，然后使用 \`writeFile\` 覆盖（Agent全量重写）或更新。确保读取和写入都成功完成，再结束流程。
 
 3. **文件分类**：
-* 正文 -> type: 'chapter'
-* 角色设定 -> type: 'character'
-* 大纲/细纲 -> type: 'outline'
-* 灵感/设定/素材 -> type: 'note'
+* 正文 -> type: 'chapter'，存放于{chapters}目录下
+* 角色设定 -> type: 'character'，存放于{characters}目录下
+* 其他设定 -> type: 'knowledge'，存放于{knowledge}目录下
+* 大纲/细纲 -> type: 'outline'，存放于{outlines}目录下
+* 灵感/设定/素材 -> type: 'note'，存放于{notes}目录下
 
 ### 语气与风格
 

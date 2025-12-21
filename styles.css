@@ -413,3 +413,106 @@ available in the app when your plugin is enabled.
 .voyaru-button-secondary:hover {
     background-color: var(--background-modifier-hover);
 }
+
+/* Local Edit Modal Styles - Mobile Friendly */
+.local-edit-modal .modal-content {
+    width: 90vw;
+    max-width: 500px;
+    max-height: 85vh;
+    overflow-y: auto;
+}
+
+.local-edit-modal h2 {
+    margin-top: 0;
+    margin-bottom: 16px;
+    font-size: 18px;
+}
+
+.local-edit-preview {
+    max-height: 150px;
+    overflow-y: auto;
+    word-wrap: break-word;
+    font-size: 13px;
+}
+
+.local-edit-content {
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.local-edit-modal .setting-item {
+    margin-bottom: 16px;
+}
+
+.local-edit-modal textarea {
+    min-height: 80px;
+    font-size: 14px;
+    padding: 10px;
+    resize: vertical;
+}
+
+.local-edit-modal .setting-item-control {
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.local-edit-modal button {
+    min-height: 44px; /* 移动端友好的点击区域 */
+    padding: 10px 20px;
+    font-size: 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+/* Local Edit Status Modal Styles - Mobile Friendly */
+.local-edit-status-modal .modal-content {
+    width: 90vw;
+    max-width: 350px;
+    padding: 20px;
+}
+
+.local-edit-status-container {
+    font-size: 14px;
+    line-height: 1.5;
+    word-wrap: break-word;
+}
+
+.local-edit-status-modal button {
+    min-height: 44px; /* 移动端友好的点击区域 */
+    padding: 10px 20px;
+    font-size: 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+/* Mobile-specific optimizations */
+@media (max-width: 600px) {
+    .local-edit-modal .modal-content {
+        width: 95vw;
+        padding: 16px;
+    }
+    
+    .local-edit-modal h2 {
+        font-size: 16px;
+    }
+    
+    .local-edit-modal textarea {
+        font-size: 16px; /* 防止iOS自动缩放 */
+    }
+    
+    .local-edit-modal .setting-item-control {
+        flex-direction: column;
+    }
+    
+    .local-edit-modal button {
+        width: 100%;
+        margin-bottom: 8px;
+    }
+    
+    .local-edit-status-modal .modal-content {
+        width: 95vw;
+        padding: 16px;
+    }
+}

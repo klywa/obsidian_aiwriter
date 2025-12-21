@@ -1,4 +1,4 @@
-import { App, Modal, Setting } from "obsidian";
+import { App, Modal, Setting, Notice } from "obsidian";
 
 export class LocalEditModal extends Modal {
     private onSubmit: (query: string) => void;
@@ -55,10 +55,15 @@ export class LocalEditModal extends Modal {
                     });
                 text.inputEl.rows = 4;
                 text.inputEl.style.width = "100%";
+                // 移动端优化：防止iOS自动缩放
+                text.inputEl.style.fontSize = "16px";
                 return text;
             });
 
-        new Setting(contentEl)
+        const buttonSetting = new Setting(contentEl);
+        buttonSetting.settingEl.style.flexWrap = "wrap";
+        
+        buttonSetting
             .addButton((button) => {
                 button
                     .setButtonText("开始修改")
@@ -67,6 +72,8 @@ export class LocalEditModal extends Modal {
                         if (this.query.trim()) {
                             this.onSubmit(this.query.trim());
                             this.close();
+                        } else {
+                            new Notice("请输入修改要求");
                         }
                     });
             })

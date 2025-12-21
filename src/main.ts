@@ -53,23 +53,25 @@ export default class VoyaruPlugin extends Plugin {
             }
         });
 
-        // Editor Command: Rewrite Selection
+        // Editor Command: Local Edit (支持手机端)
 		this.addCommand({
 			id: 'rewrite-selection',
-			name: 'Rewrite Selection',
+			name: '局部修改',
 			editorCallback: (editor: Editor, view: MarkdownView) => {
 				const selection = editor.getSelection();
-                if (selection) {
-                    // Open a modal or send to chat?
-                    // Requirement: "Popover... input instruction... streaming replacement"
-                    // For simplicity, we'll send it to Chat with a special prompt or open a specific Modal.
-                    // Let's activate chat and pre-fill it for now.
-                    this.activateView();
-                    // Ideally we'd have a method on the view to pre-fill input.
-                    // But accessing the view instance is hard.
-                    new Notice("Rewrite feature: Please copy selection to chat for now (feature in progress).");
+                const file = view.file;
+                
+                if (selection && file) {
+                    // 计算选中文本的行数区间
+                    const startLine = editor.getCursor("from").line;
+                    const endLine = editor.getCursor("to").line;
+                    
+                    // 打开局部修改对话框
+                    new LocalEditModal(this.app, selection, async (query: string) => {
+                        await this.performLocalEdit(file.path, startLine, endLine, selection, query, editor);
+                    }).open();
                 } else {
-                    new Notice("No text selected.");
+                    new Notice("请先选中要修改的文本");
                 }
 			}
 		});
