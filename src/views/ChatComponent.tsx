@@ -47,6 +47,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const lastUserMessageIdRef = useRef<string | null>(null);
     const prevSessionIdRef = useRef<string | null>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
+    const needScrollToQueryRef = useRef<boolean>(false); // 标记是否需要立即吸顶
     
     const [bottomSpacerHeight, setBottomSpacerHeight] = useState<string>('50vh');
 
@@ -326,12 +327,11 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         return () => clearTimeout(timer);
     }, [messages, isLoading]); // 依赖项保留 isLoading，虽然逻辑统一了，但 loading 状态变化可能影响 UI 渲染（如 icon）
 
-    // 智能滚动逻辑
+    // 对话完成后滚动到底部
     useEffect(() => {
         if (messages.length === 0) return;
         
         // 只在非加载状态（对话完成后）滚动到底部
-        // 加载状态下的滚动由 handleSendMessage 和 scheduleUpdate/flushUpdate 处理
         if (!isLoading) {
             scrollToBottom();
         }
@@ -517,6 +517,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         };
         
         lastUserMessageIdRef.current = newUserMsg.id || null;
+        needScrollToQueryRef.current = true; // 标记需要立即吸顶
 
         console.log('Sending message:', messageContent);
         setMessages(prev => [...prev, newUserMsg]);
@@ -524,30 +525,39 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         if (!manualFiles) setReferencedFiles([]);
         setIsLoading(true);
 
-        // 立即尝试将新消息滚动到顶部
-        setTimeout(() => {
-            if (lastUserMessageIdRef.current && messagesEndRef.current) {
-                const el = document.getElementById(lastUserMessageIdRef.current);
-                const container = messagesEndRef.current.parentElement;
-                
-                if (el && container) {
-                    const section = el.closest('.voyaru-qa-section') as HTMLElement;
-                    let targetTop = 0;
-                    if (section) {
-                        targetTop = section.offsetTop - 10;
-                    } else {
-                        let current: HTMLElement | null = el;
-                        let top = 0;
-                        while(current && current !== container) {
-                            top += current.offsetTop;
-                            current = current.offsetParent as HTMLElement;
+        // 立即执行吸顶逻辑，使用多层 RAF 确保 DOM 完全渲染
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    if (newUserMsg.id && messagesEndRef.current) {
+                        const el = document.getElementById(newUserMsg.id);
+                        const container = messagesEndRef.current.parentElement;
+                        
+                        if (el && container) {
+                            const section = el.closest('.voyaru-qa-section') as HTMLElement;
+                            if (section) {
+                                // 计算并设置 spacer
+                                const containerHeight = container.clientHeight;
+                                const sectionHeight = section.offsetHeight;
+                                let neededSpacer = containerHeight - sectionHeight - 20; 
+                                neededSpacer = Math.max(20, neededSpacer);
+                                
+                                const spacer = document.getElementById('voyaru-bottom-spacer');
+                                if (spacer) {
+                                    spacer.style.height = `${neededSpacer}px`;
+                                    setBottomSpacerHeight(`${neededSpacer}px`);
+                                }
+                                
+                                // 立即滚动
+                                container.scrollTop = section.offsetTop;
+                                console.log('📍 [handleSendMessage] Query 已立即吸顶，spacer:', neededSpacer, 'scrollTop:', section.offsetTop);
+                                needScrollToQueryRef.current = false;
+                            }
                         }
-                        targetTop = top - 10;
                     }
-                    container.scrollTop = targetTop;
-                }
-            }
-        }, 0);
+                });
+            });
+        });
 
         // 更新当前session的消息（在发送时）
         if (currentSessionId) {
@@ -660,10 +670,18 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     pendingUpdateContent = null;
                     pendingUpdateId = null;
                     
-                    // 流式输出时持续滚动到最新内容
+                    // 流式输出时智能滚动：只在内容超出窗口时才滚动
                     requestAnimationFrame(() => {
                         if (messagesEndRef.current) {
-                            messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                            const container = messagesEndRef.current.parentElement;
+                            if (container) {
+                                // 检查是否已经滚动到了可以看到底部的位置
+                                const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+                                // 只有当内容超出窗口且用户在底部时才滚动
+                                if (isAtBottom && container.scrollHeight > container.clientHeight) {
+                                    messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                                }
+                            }
                         }
                     });
                 }
@@ -671,6 +689,29 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
 
             for await (const chunk of stream) {
                 if (abortControllerRef.current?.signal.aborted) break;
+                
+                // 第一个 chunk 到达时，确保 query 在顶部
+                if (!hasReceivedAnyChunk && lastUserMessageIdRef.current && messagesEndRef.current) {
+                    const el = document.getElementById(lastUserMessageIdRef.current);
+                    const container = messagesEndRef.current.parentElement;
+                    if (el && container) {
+                        const section = el.closest('.voyaru-qa-section') as HTMLElement;
+                        if (section) {
+                            // 同样在这里强制计算一次 spacer，防止网络延迟期间 spacer 被重置
+                            const containerHeight = container.clientHeight;
+                            const sectionHeight = section.offsetHeight;
+                            let neededSpacer = containerHeight - sectionHeight - 20; 
+                            neededSpacer = Math.max(20, neededSpacer);
+                            
+                            const spacer = document.getElementById('voyaru-bottom-spacer');
+                            if (spacer) {
+                                spacer.style.height = `${neededSpacer}px`;
+                            }
+                            
+                            container.scrollTop = section.offsetTop;
+                        }
+                    }
+                }
                 
                 hasReceivedAnyChunk = true;
                 // Accumulate logs
@@ -1827,7 +1868,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                 
                 <div ref={messagesEndRef} />
                 {/* 底部占位空间，动态计算以防止过度滚动 */}
-                <div style={{ 
+                <div id="voyaru-bottom-spacer" style={{ 
                     height: bottomSpacerHeight,
                     flexShrink: 0,
                     transition: 'height 0.1s ease-out' // 添加平滑过渡

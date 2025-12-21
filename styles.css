@@ -251,10 +251,7 @@ available in the app when your plugin is enabled.
     margin-bottom: 0; /* 移除 margin-bottom，改为 padding-bottom 来占据空间 */
     /* 完全不透明的背景 */
     background-color: var(--background-primary);
-    /* 添加底部边框分隔 - 可选，如果希望分隔更明显 */
-    /* border-bottom: 1px solid var(--background-modifier-border); */
-    /* 添加阴影增强层次感 */
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    /* 扁平化设计，不使用阴影 */
 }
 
 /* 移除之前的伪元素，因为现在直接用header本身做遮挡 */
@@ -267,7 +264,8 @@ available in the app when your plugin is enabled.
     /* Answer content area */
     position: relative;
     /* 这里的 padding-top 用来抵消视觉上的挤压感，如果需要的话 */
-    padding: 0 16px 16px 16px; /* Add horizontal padding since container has 0 padding */
+    padding: 16px; /* Add padding for answer content */
+    margin: 0 16px 16px 16px; /* Add margin for spacing */
 }
 
 .voyaru-message {
