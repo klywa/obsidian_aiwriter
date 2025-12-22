@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { AIService } from '../services/ai_service';
 import { FSService } from '../services/fs_service';
 import { SendIcon, StopIcon, PlusIcon, CloseIcon, CopyIcon, FileIcon, EditIcon, RefreshIcon, SaveIcon, UserIcon, BotIcon, ThinkingIcon, ToolIcon, TrashIcon, CheckIcon, TextSizeIcon, LogIcon, ExportIcon, ArrowUpIcon, MentionIcon, ChevronDownIcon, MoreHorizontalIcon } from '../components/Icons';
@@ -48,6 +48,9 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const prevSessionIdRef = useRef<string | null>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
     const needScrollToQueryRef = useRef<boolean>(false); // 标记是否需要立即吸顶
+    // 滚动控制：避免流式输出时强制“尾部贴底”导致视口下坠
+    const shouldAutoFollowRef = useRef<boolean>(true); // 用户未主动滚走时才自动跟随
+    const isProgrammaticScrollRef = useRef<boolean>(false); // 标记程序滚动，避免误判为用户滚动
     
     const [bottomSpacerHeight, setBottomSpacerHeight] = useState<string>('50vh');
 
@@ -289,6 +292,86 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
 
+    const setScrollTopSafely = (container: HTMLElement, nextTop: number) => {
+        isProgrammaticScrollRef.current = true;
+        container.scrollTop = nextTop;
+        requestAnimationFrame(() => {
+            isProgrammaticScrollRef.current = false;
+        });
+    };
+
+    // 监听用户滚动：流式输出时，如果用户主动离开底部，则停止自动跟随
+    useEffect(() => {
+        const container = messagesContainerRef.current;
+        if (!container) return;
+
+        const onScroll = () => {
+            if (isProgrammaticScrollRef.current) return;
+            if (!isLoading) return;
+
+            const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+            shouldAutoFollowRef.current = distanceFromBottom < 120;
+        };
+
+        container.addEventListener('scroll', onScroll, { passive: true });
+        return () => container.removeEventListener('scroll', onScroll as EventListener);
+    }, [isLoading]);
+
+    // 发送后“立即吸顶”：用 useLayoutEffect 确保 React 已把新消息渲染进 DOM
+    useLayoutEffect(() => {
+        if (!needScrollToQueryRef.current) return;
+
+        const container = messagesContainerRef.current;
+        const id = lastUserMessageIdRef.current;
+        if (!container || !id) return;
+
+        const el = document.getElementById(id);
+        if (!el) return;
+
+        const section = el.closest('.voyaru-qa-section') as HTMLElement | null;
+        if (!section) return;
+
+        // 计算并设置 spacer：仅用于“内容不足一屏时”的美观填充
+        const containerHeight = container.clientHeight;
+        const sectionHeight = section.offsetHeight;
+        let neededSpacer = containerHeight - sectionHeight - 20;
+        neededSpacer = Math.max(20, neededSpacer);
+
+        setBottomSpacerHeight(`${neededSpacer}px`);
+        setScrollTopSafely(container, section.offsetTop);
+
+        needScrollToQueryRef.current = false;
+    }, [messages.length]);
+
+    // 流式输出的智能滚动：
+    // - QA section 仍能容纳在视口内：保持 query 吸顶，不做尾部贴底
+    // - 只有当 section 超出视口后，且用户没有主动滚走：才跟随到最新输出
+    const maybeAutoScrollDuringStreaming = (section: HTMLElement | null) => {
+        if (!isLoading) return;
+        const container = messagesContainerRef.current;
+        if (!container || !messagesEndRef.current || !section) return;
+
+        const containerHeight = container.clientHeight;
+        const sectionHeight = section.offsetHeight;
+        const fitsInViewport = sectionHeight <= (containerHeight - 20);
+
+        if (fitsInViewport) {
+            const delta = Math.abs(container.scrollTop - section.offsetTop);
+            if (delta > 2) {
+                setScrollTopSafely(container, section.offsetTop);
+            }
+            return;
+        }
+
+        if (shouldAutoFollowRef.current) {
+            isProgrammaticScrollRef.current = true;
+            messagesEndRef.current.scrollIntoView({ behavior: 'auto', block: 'end' });
+            requestAnimationFrame(() => {
+                isProgrammaticScrollRef.current = false;
+            });
+        }
+    };
+
     // 动态计算底部空间高度
     useEffect(() => {
         if (messages.length === 0) {
@@ -382,6 +465,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             const tools = plugin.settings.tools.filter((t: any) => 
                 t.name.toLowerCase().includes(trigger.query.toLowerCase())
             );
+            console.log(`Matching tools: found ${tools.length} from ${plugin.settings.tools.length} total tools`);
             setFilteredTools(tools);
             setShowTools(true);
             setShowFiles(false);
@@ -429,10 +513,19 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             const trigger = detectTrigger(inputValue, cursorPos);
             
             if (trigger.type === '@') {
+                const query = trigger.query.toLowerCase();
                 const matches = allFiles.filter(f => 
-                    f.toLowerCase().includes(trigger.query.toLowerCase())
+                    f.toLowerCase().includes(query)
                 ).slice(0, 10);
-                setFilteredFiles(matches);
+                
+                console.log(`Matching files for query "${query}": found ${matches.length} matches`);
+                
+                if (matches.length === 0 && query.length > 0) {
+                     // If explicit query matches nothing, show empty
+                     setFilteredFiles([]);
+                } else {
+                     setFilteredFiles(matches);
+                }
             }
         }
     }, [inputValue, showFiles, allFiles]);
@@ -518,46 +611,13 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         
         lastUserMessageIdRef.current = newUserMsg.id || null;
         needScrollToQueryRef.current = true; // 标记需要立即吸顶
+        shouldAutoFollowRef.current = true; // 新一轮对话默认跟随（用户若手动滚动会自动关闭）
 
         console.log('Sending message:', messageContent);
         setMessages(prev => [...prev, newUserMsg]);
         if (!manualContent) setInputValue(''); // Only clear input if not manual (or handled elsewhere)
         if (!manualFiles) setReferencedFiles([]);
         setIsLoading(true);
-
-        // 立即执行吸顶逻辑，使用多层 RAF 确保 DOM 完全渲染
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    if (newUserMsg.id && messagesEndRef.current) {
-                        const el = document.getElementById(newUserMsg.id);
-                        const container = messagesEndRef.current.parentElement;
-                        
-                        if (el && container) {
-                            const section = el.closest('.voyaru-qa-section') as HTMLElement;
-                            if (section) {
-                                // 计算并设置 spacer
-                                const containerHeight = container.clientHeight;
-                                const sectionHeight = section.offsetHeight;
-                                let neededSpacer = containerHeight - sectionHeight - 20; 
-                                neededSpacer = Math.max(20, neededSpacer);
-                                
-                                const spacer = document.getElementById('voyaru-bottom-spacer');
-                                if (spacer) {
-                                    spacer.style.height = `${neededSpacer}px`;
-                                    setBottomSpacerHeight(`${neededSpacer}px`);
-                                }
-                                
-                                // 立即滚动
-                                container.scrollTop = section.offsetTop;
-                                console.log('📍 [handleSendMessage] Query 已立即吸顶，spacer:', neededSpacer, 'scrollTop:', section.offsetTop);
-                                needScrollToQueryRef.current = false;
-                            }
-                        }
-                    }
-                });
-            });
-        });
 
         // 更新当前session的消息（在发送时）
         if (currentSessionId) {
@@ -634,12 +694,13 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                         });
                         pendingUpdateContent = null;
                         pendingUpdateId = null;
-                        
-                        // 流式输出时持续滚动到最新内容
+
+                        // 流式输出：仅在内容超出视口时才跟随到最新输出（避免“下降”）
                         requestAnimationFrame(() => {
-                            if (messagesEndRef.current) {
-                                messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
-                            }
+                            const id = lastUserMessageIdRef.current;
+                            const el = id ? document.getElementById(id) : null;
+                            const section = el?.closest('.voyaru-qa-section') as HTMLElement | null;
+                            maybeAutoScrollDuringStreaming(section);
                         });
                     }
                 }, 50); 
@@ -669,20 +730,13 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     });
                     pendingUpdateContent = null;
                     pendingUpdateId = null;
-                    
-                    // 流式输出时智能滚动：只在内容超出窗口时才滚动
+
+                    // flush 同样遵循“仅溢出才跟随”的规则
                     requestAnimationFrame(() => {
-                        if (messagesEndRef.current) {
-                            const container = messagesEndRef.current.parentElement;
-                            if (container) {
-                                // 检查是否已经滚动到了可以看到底部的位置
-                                const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-                                // 只有当内容超出窗口且用户在底部时才滚动
-                                if (isAtBottom && container.scrollHeight > container.clientHeight) {
-                                    messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
-                                }
-                            }
-                        }
+                        const id = lastUserMessageIdRef.current;
+                        const el = id ? document.getElementById(id) : null;
+                        const section = el?.closest('.voyaru-qa-section') as HTMLElement | null;
+                        maybeAutoScrollDuringStreaming(section);
                     });
                 }
             };
@@ -693,7 +747,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                 // 第一个 chunk 到达时，确保 query 在顶部
                 if (!hasReceivedAnyChunk && lastUserMessageIdRef.current && messagesEndRef.current) {
                     const el = document.getElementById(lastUserMessageIdRef.current);
-                    const container = messagesEndRef.current.parentElement;
+                    const container = messagesContainerRef.current;
                     if (el && container) {
                         const section = el.closest('.voyaru-qa-section') as HTMLElement;
                         if (section) {
@@ -707,8 +761,9 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                             if (spacer) {
                                 spacer.style.height = `${neededSpacer}px`;
                             }
-                            
-                            container.scrollTop = section.offsetTop;
+
+                            setBottomSpacerHeight(`${neededSpacer}px`);
+                            setScrollTopSafely(container, section.offsetTop);
                         }
                     }
                 }
@@ -1941,7 +1996,9 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                             overflowY: 'auto', 
                             marginBottom: '8px',
                             boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
-                            zIndex: 1000
+                            zIndex: 1000,
+                            // If both lists are empty, hide the popup content (or the popup itself)
+                            display: (showTools && filteredTools.length === 0) || (showFiles && filteredFiles.length === 0) ? 'none' : 'block'
                         }}
                     >
                         {showTools ? filteredTools.map((t, idx) => (

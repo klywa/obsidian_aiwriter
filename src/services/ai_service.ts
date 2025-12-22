@@ -75,7 +75,7 @@ Always read referenced files first before attempting to work with them.`;
     clearSession(sessionId: string) {
         if (this.activeChats.has(sessionId)) {
             this.activeChats.delete(sessionId);
-            console.log(`Cleared server-side context for session: ${sessionId}`);
+            console.log(`[Server Mode] Explicitly cleared remote LLM context for session: ${sessionId}`);
         }
     }
 

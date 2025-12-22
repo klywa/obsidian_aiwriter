@@ -51,6 +51,7 @@ export class ToolsManagerModal extends Modal {
             cls: 'mod-cta'
         });
         saveBtn.addEventListener('click', () => {
+            console.log('Saving tools:', this.tools);
             this.onSave(this.tools);
             this.close();
         });
@@ -125,6 +126,7 @@ export class ToolsManagerModal extends Modal {
         contentEl.empty();
     }
 }
+
 
 
 
