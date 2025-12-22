@@ -817,6 +817,26 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     } else if (chunk.type === 'history_update') {
                         const updatedHistory = chunk.history;
                         setChatHistory(updatedHistory);
+                    } else if (chunk.type === 'debug_info') {
+                        // Update the user message with debug info
+                        const debugData = chunk.debugData;
+                        setMessages(prev => {
+                            // Find the user message that triggered this response
+                            // It should be the last user message
+                            // But since we are inside a response stream, we can iterate backwards?
+                            // Or simpler: We know we just sent `newUserMsg`.
+                            // But `newUserMsg` is closure variable.
+                            // We can use `newUserMsg.id` if we update `newUserMsg` object in state?
+                            
+                            // Let's iterate and find the user message with matching ID
+                            const targetId = newUserMsg.id;
+                            return prev.map(m => {
+                                if (m.id === targetId) {
+                                    return { ...m, debugData: debugData };
+                                }
+                                return m;
+                            });
+                        });
                     }
                     
                     // If we interrupted a text stream (meaning we had content), or if we just had a tool call,
@@ -1425,21 +1445,47 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     )}
                     
                     {/* Actions for User Message - only show for the LAST user message */}
-                    {m.role === 'user' && isLastUserMsg && !isEditing && (
+                    {m.role === 'user' && !isEditing && (
                         <div 
-                            className="clickable-icon"
-                            onClick={() => startEditingMessage(m.id!, m.content, m.referencedFiles || [])}
                             style={{ 
                                 position: 'absolute',
                                 top: '-20px',
                                 right: '0',
-                                cursor: 'pointer', 
-                                opacity: 0.7,
-                                padding: '4px'
+                                display: 'flex',
+                                gap: '4px'
                             }}
-                            title="修改并重新发送"
                         >
-                            <EditIcon size={14} />
+                            {/* Log Button */}
+                            {m.debugData && (
+                                <div 
+                                    className="clickable-icon"
+                                    onClick={() => handleShowLogs(m.debugData)}
+                                    style={{ 
+                                        cursor: 'pointer', 
+                                        opacity: 0.7,
+                                        padding: '4px'
+                                    }}
+                                    title="查看完整Prompt日志"
+                                >
+                                    <LogIcon size={14} />
+                                </div>
+                            )}
+
+                            {/* Edit Button (Only for last message) */}
+                            {isLastUserMsg && (
+                                <div 
+                                    className="clickable-icon"
+                                    onClick={() => startEditingMessage(m.id!, m.content, m.referencedFiles || [])}
+                                    style={{ 
+                                        cursor: 'pointer', 
+                                        opacity: 0.7,
+                                        padding: '4px'
+                                    }}
+                                    title="修改并重新发送"
+                                >
+                                    <EditIcon size={14} />
+                                </div>
+                            )}
                         </div>
                     )}
 

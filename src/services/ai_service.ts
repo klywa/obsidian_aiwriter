@@ -1,6 +1,6 @@
 import { GoogleGenAI, Content, Part, Tool, Type } from "@google/genai";
 import { FSService } from "./fs_service";
-import { VoyaruSettings } from "../settings";
+import { VoyaruSettings, DEFAULT_SETTINGS } from "../settings";
 import { Notice } from "obsidian";
 
 export class AIService {
@@ -44,7 +44,11 @@ export class AIService {
     }
 
     getProcessedSystemPrompt(): string {
-        let prompt = this.settings.systemPrompt || "";
+        let prompt = this.settings.systemPrompt;
+        if (!prompt || prompt.trim().length === 0) {
+            prompt = DEFAULT_SETTINGS.systemPrompt;
+        }
+        
         const folders = this.settings.folders;
         
         if (folders) {
@@ -72,6 +76,92 @@ Always read referenced files first before attempting to work with them.`;
         return prompt;
     }
 
+    async getProjectFileTree(): Promise<string> {
+        const folders = this.settings.folders;
+        const folderKeys: (keyof typeof folders)[] = ['chapters', 'characters', 'outlines', 'notes', 'knowledge'];
+        const allFiles = new Set<string>();
+        
+        console.log(`[AIService] Building file tree from folders:`, folders);
+        
+        for (const key of folderKeys) {
+            const folderPath = folders[key];
+            if (folderPath) {
+                try {
+                    const files = await this.fs.listFilesRecursive(folderPath);
+                    console.log(`[AIService] Folder "${key}" (${folderPath}): found ${files.length} files`);
+                    files.forEach(f => allFiles.add(f));
+                } catch (e) {
+                    console.warn(`[AIService] Failed to read folder "${key}" (${folderPath}):`, e);
+                }
+            } else {
+                console.warn(`[AIService] Folder "${key}" is not configured (empty path)`);
+            }
+        }
+        
+        console.log(`[AIService] Total unique files collected: ${allFiles.size}`);
+        
+        const tree = this.generateFileTree(Array.from(allFiles));
+        
+        if (tree.length === 0) {
+            console.warn(`[AIService] File tree is EMPTY. No files found in configured folders.`);
+        }
+        
+        return tree;
+    }
+
+    private generateFileTree(files: string[]): string {
+        interface TreeNode {
+            isFile: boolean;
+            children: { [name: string]: TreeNode };
+        }
+        
+        const root: TreeNode = { isFile: false, children: {} };
+        
+        for (const path of files) {
+            const parts = path.split('/');
+            let current = root;
+            for (let i = 0; i < parts.length; i++) {
+                const part = parts[i];
+                if (part) { // Check if part is valid
+                    if (!current.children[part]) {
+                        current.children[part] = {
+                            isFile: i === parts.length - 1,
+                            children: {}
+                        };
+                    }
+                    current = current.children[part];
+                }
+            }
+        }
+        
+        const printTree = (node: TreeNode, prefix: string = ""): string => {
+            let output = "";
+            const keys = Object.keys(node.children).sort((a, b) => a.localeCompare(b));
+            
+            for (let i = 0; i < keys.length; i++) {
+                const key = keys[i];
+                if (key) { // Check if key is valid
+                    const child = node.children[key];
+                    if (child) {
+                        const isLast = i === keys.length - 1;
+                        const connector = isLast ? "└── " : "├── ";
+                        
+                        output += `${prefix}${connector}${key}\n`;
+                        
+                        const childPrefix = prefix + (isLast ? "    " : "│   ");
+                        if (!child.isFile) {
+                             output += printTree(child, childPrefix);
+                        }
+                    }
+                }
+            }
+            return output;
+        };
+        
+        if (files.length === 0) return "";
+        return ".\n" + printTree(root);
+    }
+
     clearSession(sessionId: string) {
         if (this.activeChats.has(sessionId)) {
             this.activeChats.delete(sessionId);
@@ -79,7 +169,7 @@ Always read referenced files first before attempting to work with them.`;
         }
     }
 
-    async *streamChat(sessionId: string, history: Content[], newMessage: string, referencedFiles: string[] = [], abortSignal?: AbortSignal): AsyncGenerator<any, void, unknown> {
+    async *streamChat(sessionId: string, history: Content[], newMessage: string, referencedFiles: string[] = [], abortSignal?: AbortSignal, systemInstructionOverride?: string): AsyncGenerator<any, void, unknown> {
         try {
         // 检查API Key
         const trimmedKey = this.settings.apiKey?.trim();
@@ -101,6 +191,13 @@ Always read referenced files first before attempting to work with them.`;
             yield { type: "error", content: `API Key 无效。当前 API Key: ${trimmedKey ? '***' + trimmedKey.slice(-4) : '空'}。请检查 API Key 是否正确。` };
             return;
         }
+
+        // Prepare System Prompt and File Tree
+        const baseSystemPrompt = systemInstructionOverride || this.getProcessedSystemPrompt();
+        const fileTree = await this.getProjectFileTree();
+        const fullSystemPrompt = baseSystemPrompt + (fileTree ? `\n\n### Project File Tree (Always Available)\n\`\`\`\n${fileTree}\n\`\`\`\n` : "");
+        
+        console.log(`[AIService] File tree generated (length: ${fileTree.length}). Full System Prompt length: ${fullSystemPrompt.length}`);
 
         // Prepare context based on reference mode
         let contextContent = "";
@@ -283,7 +380,7 @@ Always read referenced files first before attempting to work with them.`;
             chat = this.genAI.chats.create({
             model: this.settings.model || "gemini-2.0-flash", // Ensure string
             config: {
-                    systemInstruction: this.getProcessedSystemPrompt(),
+                    systemInstruction: fullSystemPrompt,
                 tools: tools,
             },
             history: cleanHistory
@@ -299,6 +396,15 @@ Always read referenced files first before attempting to work with them.`;
         let msgToSend: Part[] | string = contextContent ? `${contextContent}\n\nUser Query: ${newMessage}` : newMessage;
         
         console.log('Final message to send (truncated):', typeof msgToSend === 'string' ? msgToSend.substring(0, 500) + '...' : 'Part[] content');
+
+        // Yield debug info
+        yield { 
+            type: "debug_info", 
+            debugData: {
+                systemInstruction: fullSystemPrompt,
+                userMessage: msgToSend
+            }
+        };
 
         // Loop for tool calls
         while (true) {

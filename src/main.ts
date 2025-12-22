@@ -209,10 +209,27 @@ export default class VoyaruPlugin extends Plugin {
             // 构建特殊的system prompt
             // 基于已有的 system prompt 增强
             const baseSystemPrompt = this.aiService.getProcessedSystemPrompt();
-            const localEditPrompt = `${baseSystemPrompt}
+            
+            // 将 "You are a text editing assistant..." 作为 User Message 的一部分，
+            // 或者通过 systemInstructionOverride 传递给 streamChat
+            // 为了避免重复包含 baseSystemPrompt (streamChat 默认会加)，我们在这里构造一个覆盖用的 System Prompt
+            // 但 Local Edit 需要明确的角色定义，可能不同于 baseSystemPrompt
+            
+            // 方案：让 streamChat 使用我们自定义的 System Prompt (包含 base + local edit instructions + file tree)
+            // 这样 streamChat 会 append file tree
+            
+            const localEditSystemInstruction = `${baseSystemPrompt}
 
 你是一个文本编辑助手。用户要求你对文档中的特定部分进行修改。
 
+**输出规则**:
+1. 只输出修改后的文本内容。
+2. 不要包含任何 "好的"、"修改如下" 等对话用语。
+3. 不要包含任何 <think> 标签或思考过程。
+4. 不要使用 markdown 代码块包裹（除非内容本身包含代码）。
+5. 保持与上下文的连贯性。`;
+
+            const localEditUserMessage = `
 **文件路径**: ${filePath}
 **需要修改的行数**: 第${startLine + 1}行到第${endLine + 1}行
 
@@ -231,21 +248,15 @@ ${contextBefore}
 ${contextAfter}
 \`\`\`
 
-**用户要求**: ${query}
-
-**输出规则**:
-1. 只输出修改后的文本内容。
-2. 不要包含任何 "好的"、"修改如下" 等对话用语。
-3. 不要包含任何 <think> 标签或思考过程。
-4. 不要使用 markdown 代码块包裹（除非内容本身包含代码）。
-5. 保持与上下文的连贯性。`;
+**用户要求**: ${query}`;
 
             this.localEditStatusModal.updateStatus("正在生成修改...");
 
             // 调用AI服务
             // 使用临时session ID，确保局部修改独立
             const tempSessionId = `localedit-${Date.now()}`;
-            const stream = this.aiService.streamChat(tempSessionId, [], localEditPrompt, []);
+            // Pass localEditUserMessage as message, and localEditSystemInstruction as override
+            const stream = this.aiService.streamChat(tempSessionId, [], localEditUserMessage, [], undefined, localEditSystemInstruction);
             let modifiedContent = "";
 
             for await (const chunk of stream) {

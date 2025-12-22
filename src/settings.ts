@@ -22,6 +22,10 @@ export interface Message {
             path: string;
         };
     }; // To store args, result, logs, undo info
+    debugData?: {
+        systemInstruction: string;
+        userMessage: any;
+    };
     id?: string;
     referencedFiles?: string[];
 }
