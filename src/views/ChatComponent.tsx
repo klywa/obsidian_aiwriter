@@ -4,7 +4,7 @@ import { AIService } from '../services/ai_service';
 import { FSService } from '../services/fs_service';
 import { SendIcon, StopIcon, PlusIcon, CloseIcon, CopyIcon, FileIcon, EditIcon, RefreshIcon, SaveIcon, UserIcon, BotIcon, ThinkingIcon, ToolIcon, TrashIcon, CheckIcon, TextSizeIcon, LogIcon, ExportIcon, ArrowUpIcon, MentionIcon, ChevronDownIcon, MoreHorizontalIcon } from '../components/Icons';
 import { Message, Session, MODELS } from '../settings';
-import { Notice, Menu, TFile, MarkdownView } from 'obsidian';
+import { Notice, Menu, TFile, MarkdownView, Platform } from 'obsidian';
 import { ExportModal } from '../modals/ExportModal';
 import { LogModal } from '../modals/LogModal';
 
@@ -34,6 +34,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const [editingFiles, setEditingFiles] = useState<string[]>([]);
     const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
     const [clearHistoryConfirm, setClearHistoryConfirm] = useState(false);
+    const [collapsedQueries, setCollapsedQueries] = useState<Set<string>>(new Set());
     
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -612,6 +613,11 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         lastUserMessageIdRef.current = newUserMsg.id || null;
         needScrollToQueryRef.current = true; // 标记需要立即吸顶
         shouldAutoFollowRef.current = true; // 新一轮对话默认跟随（用户若手动滚动会自动关闭）
+
+        // 在手机端发送后默认折叠query
+        if (Platform.isMobile && newUserMsg.id) {
+            setCollapsedQueries(prev => new Set(prev).add(newUserMsg.id!));
+        }
 
         console.log('Sending message:', messageContent);
         setMessages(prev => [...prev, newUserMsg]);
@@ -1602,49 +1608,101 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                         </div>
                     ) : (
                         /* Normal User Message (Full Width Box Style with Background) */
-                        <div style={{
-                            width: '100%',
-                            color: 'var(--text-normal)',
-                            backgroundColor: 'var(--background-secondary)',
-                            border: '1px solid var(--background-modifier-border)',
-                            borderRadius: '12px',
-                            padding: '12px 16px',
-                            userSelect: 'text',
-                            whiteSpace: 'pre-wrap',
-                            wordBreak: 'break-word',
-                            fontSize: '1em',
-                            lineHeight: '1.6',
-                            fontWeight: 500,
-                            boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-                        }}>
-                            {m.content}
-                            {/* Referenced Files Display in Bubble */}
-                            {m.role === 'user' && m.referencedFiles && m.referencedFiles.length > 0 && (
-                                <div style={{ 
-                                    marginTop: '8px', 
-                                    paddingTop: '8px', 
-                                    borderTop: '1px solid var(--background-modifier-border)',
-                                    fontSize: '0.85em',
-                                    display: 'flex',
-                                    flexWrap: 'wrap',
-                                    gap: '6px'
-                                }}>
-                                    {m.referencedFiles.map(rf => (
-                                        <div key={rf} style={{ 
-                                            display: 'inline-flex', 
-                                            alignItems: 'center', 
-                                            gap: '4px',
-                                            backgroundColor: 'var(--background-secondary)',
-                                            padding: '2px 6px',
-                                            borderRadius: '4px',
-                                            color: 'var(--text-muted)'
-                                        }}>
-                                            <FileIcon size={10} />
-                                            <span>{rf}</span>
-                                        </div>
-                                    ))}
+                        <div style={{ width: '100%', position: 'relative' }}>
+                            {/* 折叠/展开按钮 - 仅对用户消息显示 */}
+                            {m.role === 'user' && (
+                                <div
+                                    className="clickable-icon"
+                                    onClick={() => {
+                                        if (m.id) {
+                                            setCollapsedQueries(prev => {
+                                                const next = new Set(prev);
+                                                if (next.has(m.id!)) {
+                                                    next.delete(m.id!);
+                                                } else {
+                                                    next.add(m.id!);
+                                                }
+                                                return next;
+                                            });
+                                        }
+                                    }}
+                                    style={{
+                                        position: 'absolute',
+                                        top: '12px',
+                                        right: '12px',
+                                        cursor: 'pointer',
+                                        opacity: 0.6,
+                                        padding: '4px',
+                                        zIndex: 10,
+                                        backgroundColor: 'var(--background-primary)',
+                                        borderRadius: '4px'
+                                    }}
+                                    title={collapsedQueries.has(m.id!) ? "展开" : "折叠"}
+                                >
+                                    <ChevronDownIcon 
+                                        size={14} 
+                                        style={{ 
+                                            transform: collapsedQueries.has(m.id!) ? 'rotate(-90deg)' : 'rotate(0deg)',
+                                            transition: 'transform 0.2s'
+                                        }} 
+                                    />
                                 </div>
                             )}
+                            
+                            <div style={{
+                                width: '100%',
+                                color: 'var(--text-normal)',
+                                backgroundColor: 'var(--background-secondary)',
+                                border: '1px solid var(--background-modifier-border)',
+                                borderRadius: '12px',
+                                padding: '12px 16px',
+                                paddingRight: m.role === 'user' ? '36px' : '16px', // 为折叠按钮留空间
+                                userSelect: 'text',
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word',
+                                fontSize: '1em',
+                                lineHeight: '1.6',
+                                fontWeight: 500,
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                                overflow: 'hidden'
+                            }}>
+                                <div style={{
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: (m.role === 'user' && collapsedQueries.has(m.id!)) ? 'nowrap' : 'pre-wrap',
+                                    maxHeight: (m.role === 'user' && collapsedQueries.has(m.id!)) ? '1.6em' : 'none'
+                                }}>
+                                    {m.content}
+                                </div>
+                                
+                                {/* Referenced Files Display in Bubble - 折叠时隐藏 */}
+                                {m.role === 'user' && m.referencedFiles && m.referencedFiles.length > 0 && !collapsedQueries.has(m.id!) && (
+                                    <div style={{ 
+                                        marginTop: '8px', 
+                                        paddingTop: '8px', 
+                                        borderTop: '1px solid var(--background-modifier-border)',
+                                        fontSize: '0.85em',
+                                        display: 'flex',
+                                        flexWrap: 'wrap',
+                                        gap: '6px'
+                                    }}>
+                                        {m.referencedFiles.map(rf => (
+                                            <div key={rf} style={{ 
+                                                display: 'inline-flex', 
+                                                alignItems: 'center', 
+                                                gap: '4px',
+                                                backgroundColor: 'var(--background-secondary)',
+                                                padding: '2px 6px',
+                                                borderRadius: '4px',
+                                                color: 'var(--text-muted)'
+                                            }}>
+                                                <FileIcon size={10} />
+                                                <span>{rf}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
 
