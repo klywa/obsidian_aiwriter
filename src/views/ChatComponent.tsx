@@ -1675,8 +1675,8 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                     {m.content}
                                 </div>
                                 
-                                {/* Referenced Files Display in Bubble - 折叠时隐藏 */}
-                                {m.role === 'user' && m.referencedFiles && m.referencedFiles.length > 0 && !collapsedQueries.has(m.id!) && (
+                                {/* Referenced Files Display in Bubble */}
+                                {m.role === 'user' && m.referencedFiles && m.referencedFiles.length > 0 && (
                                     <div style={{ 
                                         marginTop: '8px', 
                                         paddingTop: '8px', 
@@ -1684,7 +1684,9 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                         fontSize: '0.85em',
                                         display: 'flex',
                                         flexWrap: 'wrap',
-                                        gap: '6px'
+                                        gap: '6px',
+                                        height: collapsedQueries.has(m.id!) ? '34px' : 'auto',
+                                        overflow: 'hidden'
                                     }}>
                                         {m.referencedFiles.map(rf => (
                                             <div key={rf} style={{ 
