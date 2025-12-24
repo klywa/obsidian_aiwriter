@@ -318,94 +318,55 @@ available in the app when your plugin is enabled.
         overflow-y: auto;
     }
     
-    /* Left Panel becomes Top Panel */
+    /* Left Panel becomes Top Panel -> Now Full Screen List */
     .tools-manager-left-panel {
         width: 100%;
         min-width: auto;
         border-right: none;
-        border-bottom: 1px solid var(--background-modifier-border);
+        border-bottom: none;
         padding: 12px 16px;
-        max-height: 40vh;
-    }
-    
-    .tools-list-header {
-        margin-bottom: 8px;
-        padding-bottom: 6px;
-    }
-    
-    .tools-list-title {
-        font-size: 12px;
-    }
-    
-    .tools-list-hint {
-        display: none; /* 隐藏拖拽提示，移动端不太适合拖拽 */
-    }
-    
-    .tools-list-container {
-        max-height: 30vh;
-        gap: 6px;
-    }
-    
-    /* Make tags more touch-friendly */
-    .tool-tag {
-        padding: 10px 12px;
-        min-height: 44px; /* Apple推荐的最小触摸区域 */
-        align-items: center;
-    }
-    
-    .tool-tag-content {
+        max-height: none; /* 取消高度限制 */
         flex: 1;
     }
     
-    .tool-tag-content span {
-        font-size: 13px;
+    .tools-list-container {
+        max-height: none; /* 取消高度限制 */
+        gap: 8px;
     }
     
-    /* Mobile sorting buttons */
-    .tool-tag-mobile-actions {
-        display: flex;
-        gap: 4px;
-        margin-right: 4px;
+    /* Right Panel becomes Bottom Panel -> Now Full Screen Edit */
+    .tools-manager-right-panel {
+        padding: 12px 16px;
+        max-height: none;
+        flex: 1;
+        display: none; /* 默认隐藏，由JS控制显示 */
     }
     
-    .tool-tag-move-btn {
-        width: 32px;
-        height: 32px;
+    .tools-mobile-header {
         display: flex;
         align-items: center;
-        justify-content: center;
-        border-radius: 4px;
-        font-size: 16px;
-        font-weight: bold;
-        background-color: var(--background-modifier-hover);
-        opacity: 0.8;
-        transition: all 0.2s ease;
-        flex-shrink: 0;
+        gap: 12px;
+        padding-bottom: 12px;
+        margin-bottom: 12px;
+        border-bottom: 1px solid var(--background-modifier-border);
     }
     
-    .tool-tag-move-btn:active {
-        opacity: 1;
-        background-color: var(--interactive-accent);
-        color: var(--text-on-accent);
-        transform: scale(0.95);
-    }
-    
-    .tool-tag-delete {
-        width: 32px;
-        height: 32px;
-        font-size: 18px;
-        margin-left: 4px;
-    }
-    
-    /* Disable drag on mobile */
-    .tool-tag {
+    .tools-mobile-back-btn {
+        background: none;
+        border: none;
+        padding: 4px 8px;
+        color: var(--text-accent);
+        font-size: 14px;
         cursor: pointer;
     }
     
-    /* Right Panel becomes Bottom Panel */
-    .tools-manager-right-panel {
-        padding: 16px;
-        max-height: none;
+    .tools-mobile-title {
+        font-weight: 600;
+        font-size: 16px;
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
     
     .tool-edit-field {
@@ -426,6 +387,7 @@ available in the app when your plugin is enabled.
         min-height: 200px;
         max-height: 400px;
         padding: 12px;
+        padding-bottom: 50vh; /* 增加底部padding，允许滚动到顶部 */
         font-size: 16px; /* 防止iOS自动缩放 */
     }
     
@@ -923,6 +885,7 @@ available in the app when your plugin is enabled.
     .local-edit-textarea {
         font-size: 16px; /* 防止iOS自动缩放 */
         min-height: 100px;
+        padding-bottom: 120px; /* 增加底部空间，防止键盘遮挡 */
     }
     
     .local-edit-buttons {

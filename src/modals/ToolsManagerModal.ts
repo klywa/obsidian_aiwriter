@@ -90,6 +90,15 @@ export class ToolsManagerModal extends Modal {
     private renderLeftPanel() {
         this.leftPanel.empty();
         
+        // 移动端：如果在详情模式，隐藏列表
+        if (Platform.isMobile && this.selectedIndex !== -1 && document.querySelector('.tools-manager-modal')) {
+             this.leftPanel.style.display = 'none';
+             this.rightPanel.style.display = 'flex';
+        } else if (Platform.isMobile) {
+             this.leftPanel.style.display = 'flex';
+             this.rightPanel.style.display = 'none';
+        }
+        
         const header = this.leftPanel.createDiv('tools-list-header');
         header.createEl('span', { text: '工具列表', cls: 'tools-list-title' });
         header.createEl('span', { text: '可拖拽排序', cls: 'tools-list-hint' });
@@ -169,7 +178,7 @@ export class ToolsManagerModal extends Modal {
             tagEl.addEventListener('click', (e) => {
                 const target = e.target as HTMLElement;
                 if (!target.closest('.tool-tag-delete') && 
-                    !target.closest('.tool-tag-mobile-actions')) {
+                    !target.closest('.tool-tag-move-btn')) { // 修复：同时排除移动按钮
                     this.selectedIndex = index;
                     this.renderLeftPanel();
                     this.renderRightPanel();
@@ -247,6 +256,25 @@ export class ToolsManagerModal extends Modal {
 
     private renderRightPanel() {
         this.rightPanel.empty();
+        
+        // 移动端头部导航
+        if (Platform.isMobile) {
+            const mobileHeader = this.rightPanel.createDiv('tools-mobile-header');
+            const backBtn = mobileHeader.createEl('button', {
+                text: '← 返回列表',
+                cls: 'tools-mobile-back-btn'
+            });
+            backBtn.onclick = () => {
+                // 清除选中状态（但保留selected index以便知道刚才选了谁，这里需要一个机制切回列表模式）
+                // 简单起见，我们设置一个标志或直接操作DOM
+                this.leftPanel.style.display = 'flex';
+                this.rightPanel.style.display = 'none';
+            };
+            mobileHeader.createEl('span', { 
+                text: this.tools[this.selectedIndex]?.name || '编辑工具',
+                cls: 'tools-mobile-title'
+            });
+        }
         
         if (this.tools.length === 0) {
             this.rightPanel.createEl('p', {
