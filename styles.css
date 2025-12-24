@@ -120,13 +120,15 @@ available in the app when your plugin is enabled.
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 6px 10px;
+    padding: 8px 10px;
+    min-height: 36px; /* 确保统一高度 */
     border-radius: 6px;
     background-color: var(--background-secondary);
     border: 1px solid var(--background-modifier-border);
     cursor: pointer;
     transition: all 0.2s ease;
     user-select: none;
+    box-sizing: border-box;
 }
 
 .tool-tag:hover {
@@ -184,11 +186,27 @@ available in the app when your plugin is enabled.
 
 /* Drag states */
 .tool-tag-dragging {
-    opacity: 0.5;
+    opacity: 0.4;
+    background-color: var(--background-modifier-hover);
+}
+
+.tool-tag-chosen {
+    opacity: 0.8;
+}
+
+.tool-tag-drag {
+    opacity: 1;
+    background-color: var(--background-secondary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .tool-tag-drag-over {
     border-top: 2px solid var(--interactive-accent);
+}
+
+/* Sortable fallback class */
+.sortable-fallback {
+    opacity: 0.6;
 }
 
 /* Right Panel - Edit Area */

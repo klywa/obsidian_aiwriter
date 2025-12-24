@@ -1,18 +1,24 @@
 import { App, Modal, Notice, Platform } from "obsidian";
 import { AgentTool } from "../settings";
+import Sortable from "sortablejs";
 
 export class ToolsManagerModal extends Modal {
     private tools: AgentTool[];
     private onSave: (tools: AgentTool[]) => void;
     private leftPanel: HTMLElement;
     private rightPanel: HTMLElement;
-    private selectedIndex: number = 0;
+    private selectedIndex: number = -1; // 初始化为 -1，表示未选中任何工具
     private draggedIndex: number | null = null;
+    private sortableInstance: any = null; // 保存 Sortable 实例
 
     constructor(app: App, tools: AgentTool[], onSave: (tools: AgentTool[]) => void) {
         super(app);
         this.tools = JSON.parse(JSON.stringify(tools)); // Deep copy
         this.onSave = onSave;
+        // 如果有工具，桌面端默认选中第一个，移动端不选中
+        if (this.tools.length > 0 && !Platform.isMobile) {
+            this.selectedIndex = 0;
+        }
     }
 
     onOpen() {
@@ -75,7 +81,16 @@ export class ToolsManagerModal extends Modal {
             
             console.log('Saving tools:', this.tools);
             this.onSave(this.tools);
-            this.close();
+            
+            // 移动端：保存后返回列表，桌面端：关闭弹窗
+            if (Platform.isMobile) {
+                new Notice('保存成功');
+                this.selectedIndex = -1; // 取消选中
+                this.renderLeftPanel();
+                this.renderRightPanel();
+            } else {
+                this.close();
+            }
         });
         
         // Cancel Button
@@ -90,18 +105,22 @@ export class ToolsManagerModal extends Modal {
     private renderLeftPanel() {
         this.leftPanel.empty();
         
-        // 移动端：如果在详情模式，隐藏列表
-        if (Platform.isMobile && this.selectedIndex !== -1 && document.querySelector('.tools-manager-modal')) {
-             this.leftPanel.style.display = 'none';
-             this.rightPanel.style.display = 'flex';
-        } else if (Platform.isMobile) {
-             this.leftPanel.style.display = 'flex';
-             this.rightPanel.style.display = 'none';
+        // 移动端：根据 selectedIndex 控制显示
+        if (Platform.isMobile) {
+            if (this.selectedIndex !== -1) {
+                // 选中了某个工具，显示编辑页面
+                this.leftPanel.style.display = 'none';
+                this.rightPanel.style.display = 'flex';
+            } else {
+                // 未选中，显示列表
+                this.leftPanel.style.display = 'flex';
+                this.rightPanel.style.display = 'none';
+            }
         }
         
         const header = this.leftPanel.createDiv('tools-list-header');
         header.createEl('span', { text: '工具列表', cls: 'tools-list-title' });
-        header.createEl('span', { text: '可拖拽排序', cls: 'tools-list-hint' });
+        header.createEl('span', { text: '拖拽可排序', cls: 'tools-list-hint' });
         
         const listContainer = this.leftPanel.createDiv('tools-list-container');
         
@@ -112,14 +131,49 @@ export class ToolsManagerModal extends Modal {
             });
             return;
         }
+
+        // 销毁之前的 Sortable 实例
+        if (this.sortableInstance) {
+            this.sortableInstance.destroy();
+            this.sortableInstance = null;
+        }
+
+        // Initialize Sortable
+        this.sortableInstance = Sortable.create(listContainer, {
+            animation: 150,
+            ghostClass: 'tool-tag-dragging',
+            chosenClass: 'tool-tag-chosen',
+            dragClass: 'tool-tag-drag',
+            delay: Platform.isMobile ? 200 : 0, 
+            delayOnTouchOnly: true,
+            touchStartThreshold: 5,
+            forceFallback: false,
+            fallbackTolerance: 3,
+            onEnd: (evt) => {
+                const { oldIndex, newIndex } = evt;
+                if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return;
+
+                const item = this.tools.splice(oldIndex, 1)[0];
+                if (!item) return; // 安全检查
+                this.tools.splice(newIndex, 0, item);
+
+                // Update selectedIndex
+                if (this.selectedIndex === oldIndex) {
+                    this.selectedIndex = newIndex;
+                } else if (this.selectedIndex > oldIndex && this.selectedIndex <= newIndex) {
+                    this.selectedIndex--;
+                } else if (this.selectedIndex < oldIndex && this.selectedIndex >= newIndex) {
+                    this.selectedIndex++;
+                }
+                
+                // 重新渲染以更新选中状态
+                this.renderLeftPanel();
+            }
+        });
         
         this.tools.forEach((tool, index) => {
             const tagEl = listContainer.createDiv('tool-tag');
-            
-            // 只在桌面端启用拖拽
-            if (!Platform.isMobile) {
-                tagEl.setAttribute('draggable', 'true');
-            }
+            tagEl.setAttribute('data-id', index.toString());
             
             if (index === this.selectedIndex) {
                 tagEl.addClass('tool-tag-selected');
@@ -129,56 +183,10 @@ export class ToolsManagerModal extends Modal {
             const tagContent = tagEl.createDiv('tool-tag-content');
             tagContent.createEl('span', { text: tool.name });
             
-            // 移动端排序按钮
-            if (Platform.isMobile && this.tools.length > 1) {
-                const mobileActions = tagEl.createDiv('tool-tag-mobile-actions');
-                
-                // 上移按钮
-                if (index > 0) {
-                    const upBtn = mobileActions.createDiv('tool-tag-move-btn');
-                    upBtn.innerHTML = '↑';
-                    upBtn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        const current = this.tools[index];
-                        const previous = this.tools[index - 1];
-                        if (!current || !previous) return;
-                        this.tools[index] = previous;
-                        this.tools[index - 1] = current;
-                        if (this.selectedIndex === index) {
-                            this.selectedIndex = index - 1;
-                        } else if (this.selectedIndex === index - 1) {
-                            this.selectedIndex = index;
-                        }
-                        this.renderLeftPanel();
-                    });
-                }
-                
-                // 下移按钮
-                if (index < this.tools.length - 1) {
-                    const downBtn = mobileActions.createDiv('tool-tag-move-btn');
-                    downBtn.innerHTML = '↓';
-                    downBtn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        const current = this.tools[index];
-                        const next = this.tools[index + 1];
-                        if (!current || !next) return;
-                        this.tools[index] = next;
-                        this.tools[index + 1] = current;
-                        if (this.selectedIndex === index) {
-                            this.selectedIndex = index + 1;
-                        } else if (this.selectedIndex === index + 1) {
-                            this.selectedIndex = index;
-                        }
-                        this.renderLeftPanel();
-                    });
-                }
-            }
-            
             // Click to select
             tagEl.addEventListener('click', (e) => {
                 const target = e.target as HTMLElement;
-                if (!target.closest('.tool-tag-delete') && 
-                    !target.closest('.tool-tag-move-btn')) { // 修复：同时排除移动按钮
+                if (!target.closest('.tool-tag-delete')) {
                     this.selectedIndex = index;
                     this.renderLeftPanel();
                     this.renderRightPanel();
@@ -191,66 +199,21 @@ export class ToolsManagerModal extends Modal {
             deleteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.tools.splice(index, 1);
-                if (this.selectedIndex >= this.tools.length) {
-                    this.selectedIndex = Math.max(0, this.tools.length - 1);
+                // 删除后重新设置选中状态
+                if (this.tools.length === 0) {
+                    this.selectedIndex = -1;
+                } else if (this.selectedIndex >= this.tools.length) {
+                    this.selectedIndex = this.tools.length - 1;
+                } else if (this.selectedIndex === index) {
+                    // 如果删除的是当前选中的，选中前一个或第一个
+                    this.selectedIndex = Math.max(0, index - 1);
+                    if (Platform.isMobile && this.tools.length > 0) {
+                        this.selectedIndex = -1; // 移动端删除后返回列表
+                    }
                 }
                 this.renderLeftPanel();
                 this.renderRightPanel();
             });
-            
-            // Drag events - 只在桌面端启用
-            if (!Platform.isMobile) {
-                tagEl.addEventListener('dragstart', (e) => {
-                    this.draggedIndex = index;
-                    tagEl.addClass('tool-tag-dragging');
-                    e.dataTransfer!.effectAllowed = 'move';
-                });
-                
-                tagEl.addEventListener('dragend', () => {
-                    tagEl.removeClass('tool-tag-dragging');
-                    this.draggedIndex = null;
-                });
-                
-                tagEl.addEventListener('dragover', (e) => {
-                    e.preventDefault();
-                    e.dataTransfer!.dropEffect = 'move';
-                    
-                    if (this.draggedIndex !== null && this.draggedIndex !== index) {
-                        tagEl.addClass('tool-tag-drag-over');
-                    }
-                });
-                
-                tagEl.addEventListener('dragleave', () => {
-                    tagEl.removeClass('tool-tag-drag-over');
-                });
-                
-                tagEl.addEventListener('drop', (e) => {
-                    e.preventDefault();
-                    tagEl.removeClass('tool-tag-drag-over');
-                    
-                    if (this.draggedIndex !== null && this.draggedIndex !== index) {
-                        // Reorder tools
-                        const draggedTool = this.tools[this.draggedIndex];
-                        if (!draggedTool) return;
-                        this.tools.splice(this.draggedIndex, 1);
-                        
-                        // Adjust target index if needed
-                        const targetIndex = this.draggedIndex < index ? index - 1 : index;
-                        this.tools.splice(targetIndex, 0, draggedTool);
-                        
-                        // Update selected index
-                        if (this.selectedIndex === this.draggedIndex) {
-                            this.selectedIndex = targetIndex;
-                        } else if (this.draggedIndex < this.selectedIndex && targetIndex >= this.selectedIndex) {
-                            this.selectedIndex--;
-                        } else if (this.draggedIndex > this.selectedIndex && targetIndex <= this.selectedIndex) {
-                            this.selectedIndex++;
-                        }
-                        
-                        this.renderLeftPanel();
-                    }
-                });
-            }
         });
     }
 
@@ -265,10 +228,10 @@ export class ToolsManagerModal extends Modal {
                 cls: 'tools-mobile-back-btn'
             });
             backBtn.onclick = () => {
-                // 清除选中状态（但保留selected index以便知道刚才选了谁，这里需要一个机制切回列表模式）
-                // 简单起见，我们设置一个标志或直接操作DOM
-                this.leftPanel.style.display = 'flex';
-                this.rightPanel.style.display = 'none';
+                // 返回列表
+                this.selectedIndex = -1;
+                this.renderLeftPanel();
+                this.renderRightPanel();
             };
             mobileHeader.createEl('span', { 
                 text: this.tools[this.selectedIndex]?.name || '编辑工具',
@@ -281,6 +244,17 @@ export class ToolsManagerModal extends Modal {
                 text: '请先添加工具',
                 cls: 'tools-edit-empty'
             });
+            return;
+        }
+        
+        // 如果没有选中任何工具（移动端列表视图或桌面端初始状态）
+        if (this.selectedIndex === -1) {
+            if (!Platform.isMobile) {
+                this.rightPanel.createEl('p', {
+                    text: '请选择一个工具进行编辑',
+                    cls: 'tools-edit-empty'
+                });
+            }
             return;
         }
         
