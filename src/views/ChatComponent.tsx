@@ -488,17 +488,24 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         if (showFiles) {
             const load = async () => {
                 try {
-                    const f1 = await plugin.fsService.listFilesRecursive(plugin.settings.folders.chapters);
-                    const f2 = await plugin.fsService.listFilesRecursive(plugin.settings.folders.characters);
-                    const f3 = await plugin.fsService.listFilesRecursive(plugin.settings.folders.outlines);
-                    const f4 = await plugin.fsService.listFilesRecursive(plugin.settings.folders.notes);
-                    const f5 = await plugin.fsService.listFilesRecursive(plugin.settings.folders.knowledge);
+                    const f1 = await plugin.fsService.listFilesRecursiveWithMtime(plugin.settings.folders.chapters);
+                    const f2 = await plugin.fsService.listFilesRecursiveWithMtime(plugin.settings.folders.characters);
+                    const f3 = await plugin.fsService.listFilesRecursiveWithMtime(plugin.settings.folders.outlines);
+                    const f4 = await plugin.fsService.listFilesRecursiveWithMtime(plugin.settings.folders.notes);
+                    const f5 = await plugin.fsService.listFilesRecursiveWithMtime(plugin.settings.folders.knowledge);
                     const all = [...f1, ...f2, ...f3, ...f4, ...f5];
-                    // 去重
-                    const uniqueFiles = Array.from(new Set(all));
+                    
+                    // 按修改时间排序（最新的在前）
+                    all.sort((a, b) => b.mtime - a.mtime);
+                    
+                    // 提取路径
+                    const sortedPaths = all.map(f => f.path);
+                    
+                    // 去重（保持排序）
+                    const uniqueFiles = Array.from(new Set(sortedPaths));
                     setAllFiles(uniqueFiles);
                     setIsFilesLoaded(true);
-                    console.log(`📁 Loaded ${uniqueFiles.length} files from 5 folders`);
+                    console.log(`📁 Loaded ${uniqueFiles.length} files from 5 folders (sorted by modification time)`);
                 } catch (e) {
                     console.error('Failed to load files:', e);
                 }
@@ -515,11 +522,13 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             
             if (trigger.type === '@') {
                 const query = trigger.query.toLowerCase();
+                const maxFiles = plugin.settings.maxFilesInPopup || 10;
+                // 使用用户配置的最大显示数量，文件已经按修改时间排序
                 const matches = allFiles.filter(f => 
                     f.toLowerCase().includes(query)
-                ).slice(0, 10);
+                ).slice(0, maxFiles);
                 
-                console.log(`Matching files for query "${query}": found ${matches.length} matches`);
+                console.log(`Matching files for query "${query}": found ${matches.length} matches (showing up to ${maxFiles})`);
                 
                 if (matches.length === 0 && query.length > 0) {
                      // If explicit query matches nothing, show empty
@@ -2098,7 +2107,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                             background: 'var(--background-primary)', 
                             border: '1px solid var(--background-modifier-border)',
                             borderRadius: '12px',
-                            maxHeight: '200px', 
+                            maxHeight: showFiles ? '400px' : '200px', // 文件列表显示更多
                             overflowY: 'auto', 
                             marginBottom: '8px',
                             boxShadow: '0 4px 16px rgba(0,0,0,0.15)',

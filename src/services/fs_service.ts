@@ -77,11 +77,39 @@ export class FSService {
              return [];
          }
          
-         let files: string[] = [];
+         let files: TFile[] = [];
          // Simple recursive walker
          const walk = (item: any) => {
              if (item instanceof TFile) {
-                 files.push(item.path);
+                 files.push(item);
+             } else if (item instanceof TFolder) {
+                 for (const child of item.children) {
+                     walk(child);
+                 }
+             }
+         }
+         walk(folder);
+         console.log(`📂 Found ${files.length} files in ${folderPath}`);
+         return files.map(f => f.path);
+    }
+    
+    async listFilesRecursiveWithMtime(folderPath: string): Promise<Array<{path: string, mtime: number}>> {
+         const normalizedPath = normalizePath(folderPath);
+         const folder = this.app.vault.getAbstractFileByPath(normalizedPath);
+         
+         if (!(folder instanceof TFolder)) {
+             console.warn(`Folder not found or not a folder: ${folderPath}`);
+             return [];
+         }
+         
+         let files: Array<{path: string, mtime: number}> = [];
+         // Simple recursive walker
+         const walk = (item: any) => {
+             if (item instanceof TFile) {
+                 files.push({
+                     path: item.path,
+                     mtime: item.stat.mtime
+                 });
              } else if (item instanceof TFolder) {
                  for (const child of item.children) {
                      walk(child);

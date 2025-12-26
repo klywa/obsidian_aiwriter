@@ -55,6 +55,7 @@ export interface VoyaruSettings {
     fontSize: number;
     contextMode: 'wysiwyg' | 'server';
     referenceMode: 'content' | 'path';
+    maxFilesInPopup: number;
 }
 
 export const DEFAULT_TOOLS: AgentTool[] = [
@@ -166,7 +167,8 @@ Let's extra discard those non-pyrite snoozefests. Really just totally ignore eve
     lastSessionId: null,
     fontSize: 14,
     contextMode: 'server',
-    referenceMode: 'path'
+    referenceMode: 'path',
+    maxFilesInPopup: 10
 };
 
 export class VoyaruSettingTab extends PluginSettingTab {
@@ -283,6 +285,22 @@ export class VoyaruSettingTab extends PluginSettingTab {
                             await this.plugin.saveSettings();
                         }
                     ).open();
+                }));
+        
+        containerEl.createEl('h3', { text: 'UI Configuration' });
+        
+        new Setting(containerEl)
+            .setName('文件列表最大显示数量')
+            .setDesc('在聊天输入框使用 @ 时，最多显示多少个文件（1-200）')
+            .addText(text => text
+                .setPlaceholder('10')
+                .setValue(String(this.plugin.settings.maxFilesInPopup))
+                .onChange(async (value) => {
+                    const num = parseInt(value);
+                    if (!isNaN(num) && num >= 1 && num <= 200) {
+                        this.plugin.settings.maxFilesInPopup = num;
+                        await this.plugin.saveSettings();
+                    }
                 }));
     }
 
