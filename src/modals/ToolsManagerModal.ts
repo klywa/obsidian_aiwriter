@@ -67,6 +67,25 @@ export class ToolsManagerModal extends Modal {
             this.renderRightPanel();
         });
         
+        // 导入导出按钮组
+        const importExportContainer = buttonContainer.createDiv('tools-import-export-buttons');
+        
+        // Export Button
+        const exportBtn = importExportContainer.createEl('button', {
+            text: '导出工具'
+        });
+        exportBtn.addEventListener('click', () => {
+            this.exportTools();
+        });
+        
+        // Import Button
+        const importBtn = importExportContainer.createEl('button', {
+            text: '导入工具'
+        });
+        importBtn.addEventListener('click', () => {
+            this.importTools();
+        });
+        
         // Save All Button
         const saveBtn = buttonContainer.createEl('button', {
             text: '保存',
@@ -149,7 +168,7 @@ export class ToolsManagerModal extends Modal {
             touchStartThreshold: 5,
             forceFallback: false,
             fallbackTolerance: 3,
-            onEnd: (evt) => {
+            onEnd: (evt: any) => {
                 const { oldIndex, newIndex } = evt;
                 if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return;
 
@@ -321,6 +340,267 @@ export class ToolsManagerModal extends Modal {
         });
     }
 
+    private exportTools() {
+        try {
+            // 创建 JSON 数据
+            const exportData = {
+                version: '1.0',
+                exportDate: new Date().toISOString(),
+                tools: this.tools
+            };
+            
+            // 转换为格式化的 JSON 字符串
+            const jsonString = JSON.stringify(exportData, null, 2);
+            
+            // 创建 Blob 并下载
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `voyaru-tools-${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            new Notice(`已导出 ${this.tools.length} 个工具`);
+        } catch (error: any) {
+            console.error('Export tools error:', error);
+            new Notice(`导出失败: ${error.message || '未知错误'}`);
+        }
+    }
+    
+    private importTools() {
+        // 创建文件输入元素
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'application/json,.json';
+        
+        input.addEventListener('change', async (e) => {
+            const file = (e.target as HTMLInputElement).files?.[0];
+            if (!file) return;
+            
+            try {
+                // 读取文件
+                const text = await file.text();
+                const data = JSON.parse(text);
+                
+                // 验证数据格式
+                if (!data.tools || !Array.isArray(data.tools)) {
+                    throw new Error('无效的工具文件格式');
+                }
+                
+                // 检查每个工具的格式
+                for (const tool of data.tools) {
+                    if (!tool.name || typeof tool.name !== 'string' || !tool.prompt || typeof tool.prompt !== 'string') {
+                        throw new Error('工具数据格式不正确');
+                    }
+                }
+                
+                // 检查是否有同名工具
+                const conflicts: { imported: AgentTool, existing: AgentTool, index: number }[] = [];
+                const newTools: AgentTool[] = [];
+                
+                for (const importedTool of data.tools) {
+                    const existingIndex = this.tools.findIndex(t => t.name === importedTool.name);
+                    if (existingIndex !== -1) {
+                        const existingTool = this.tools[existingIndex];
+                        if (existingTool) {
+                            conflicts.push({
+                                imported: importedTool,
+                                existing: existingTool,
+                                index: existingIndex
+                            });
+                        }
+                    } else {
+                        newTools.push(importedTool);
+                    }
+                }
+                
+                // 如果有冲突，显示确认对话框
+                if (conflicts.length > 0) {
+                    new ImportConflictModal(
+                        this.app,
+                        conflicts,
+                        newTools,
+                        (resolvedTools, shouldOverwrite) => {
+                            this.applyImport(resolvedTools, shouldOverwrite);
+                        }
+                    ).open();
+                } else {
+                    // 没有冲突，直接添加
+                    this.tools.push(...newTools);
+                    this.renderLeftPanel();
+                    this.renderRightPanel();
+                    new Notice(`成功导入 ${newTools.length} 个工具`);
+                }
+            } catch (error: any) {
+                console.error('Import tools error:', error);
+                new Notice(`导入失败: ${error.message || '未知错误'}`);
+            }
+        });
+        
+        input.click();
+    }
+    
+    private applyImport(
+        conflicts: { imported: AgentTool, existing: AgentTool, index: number }[],
+        shouldOverwrite: Map<number, boolean>
+    ) {
+        let overwriteCount = 0;
+        let addedCount = 0;
+        
+        // 处理冲突的工具
+        conflicts.forEach(conflict => {
+            if (shouldOverwrite.get(conflict.index)) {
+                const tool = this.tools[conflict.index];
+                if (tool) {
+                    this.tools[conflict.index] = conflict.imported;
+                    overwriteCount++;
+                }
+            }
+        });
+        
+        this.renderLeftPanel();
+        this.renderRightPanel();
+        
+        if (overwriteCount > 0) {
+            new Notice(`导入完成：覆盖了 ${overwriteCount} 个工具`);
+        } else {
+            new Notice(`导入完成`);
+        }
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}
+
+// 导入冲突确认对话框
+class ImportConflictModal extends Modal {
+    private conflicts: { imported: AgentTool, existing: AgentTool, index: number }[];
+    private newTools: AgentTool[];
+    private onResolve: (conflicts: { imported: AgentTool, existing: AgentTool, index: number }[], shouldOverwrite: Map<number, boolean>) => void;
+    private checkboxStates: Map<number, boolean> = new Map();
+    
+    constructor(
+        app: App,
+        conflicts: { imported: AgentTool, existing: AgentTool, index: number }[],
+        newTools: AgentTool[],
+        onResolve: (conflicts: { imported: AgentTool, existing: AgentTool, index: number }[], shouldOverwrite: Map<number, boolean>) => void
+    ) {
+        super(app);
+        this.conflicts = conflicts;
+        this.newTools = newTools;
+        this.onResolve = onResolve;
+        
+        // 默认都不覆盖
+        conflicts.forEach(c => {
+            this.checkboxStates.set(c.index, false);
+        });
+    }
+    
+    onOpen() {
+        const { contentEl } = this;
+        
+        contentEl.empty();
+        contentEl.addClass('import-conflict-modal');
+        
+        // Title
+        contentEl.createEl('h2', { text: '导入工具 - 冲突确认' });
+        
+        // 提示信息
+        const infoDiv = contentEl.createDiv('conflict-info');
+        infoDiv.createEl('p', { 
+            text: `发现 ${this.conflicts.length} 个同名工具冲突，${this.newTools.length} 个新工具。` 
+        });
+        infoDiv.createEl('p', { 
+            text: '请选择是否覆盖现有工具：',
+            cls: 'conflict-instruction'
+        });
+        
+        // 冲突列表
+        const conflictList = contentEl.createDiv('conflict-list');
+        
+        this.conflicts.forEach(conflict => {
+            const conflictItem = conflictList.createDiv('conflict-item');
+            
+            // 复选框
+            const checkboxContainer = conflictItem.createDiv('conflict-checkbox-container');
+            const checkbox = checkboxContainer.createEl('input', {
+                type: 'checkbox'
+            }) as HTMLInputElement;
+            checkbox.checked = this.checkboxStates.get(conflict.index) || false;
+            checkbox.addEventListener('change', () => {
+                this.checkboxStates.set(conflict.index, checkbox.checked);
+            });
+            
+            // 工具信息
+            const infoContainer = conflictItem.createDiv('conflict-info-container');
+            infoContainer.createEl('strong', { text: conflict.imported.name });
+            
+            const promptPreview = infoContainer.createDiv('conflict-prompt-preview');
+            promptPreview.createEl('div', { 
+                text: '现有提示词：',
+                cls: 'conflict-label'
+            });
+            promptPreview.createEl('div', { 
+                text: conflict.existing.prompt.substring(0, 100) + (conflict.existing.prompt.length > 100 ? '...' : ''),
+                cls: 'conflict-prompt-text'
+            });
+            
+            promptPreview.createEl('div', { 
+                text: '导入的提示词：',
+                cls: 'conflict-label'
+            });
+            promptPreview.createEl('div', { 
+                text: conflict.imported.prompt.substring(0, 100) + (conflict.imported.prompt.length > 100 ? '...' : ''),
+                cls: 'conflict-prompt-text conflict-imported'
+            });
+        });
+        
+        // 快捷操作按钮
+        const quickActions = contentEl.createDiv('conflict-quick-actions');
+        
+        const selectAllBtn = quickActions.createEl('button', {
+            text: '全选'
+        });
+        selectAllBtn.addEventListener('click', () => {
+            this.conflicts.forEach(c => {
+                this.checkboxStates.set(c.index, true);
+            });
+            this.onOpen(); // 重新渲染
+        });
+        
+        const deselectAllBtn = quickActions.createEl('button', {
+            text: '全不选'
+        });
+        deselectAllBtn.addEventListener('click', () => {
+            this.conflicts.forEach(c => {
+                this.checkboxStates.set(c.index, false);
+            });
+            this.onOpen(); // 重新渲染
+        });
+        
+        // 底部按钮
+        const buttonContainer = contentEl.createDiv('conflict-buttons');
+        
+        const confirmBtn = buttonContainer.createEl('button', {
+            text: '确认导入',
+            cls: 'mod-cta'
+        });
+        confirmBtn.addEventListener('click', () => {
+            this.onResolve(this.conflicts, this.checkboxStates);
+            this.close();
+        });
+        
+        const cancelBtn = buttonContainer.createEl('button', {
+            text: '取消'
+        });
+        cancelBtn.addEventListener('click', () => {
+            this.close();
+        });
+    }
+    
     onClose() {
         const { contentEl } = this;
         contentEl.empty();
