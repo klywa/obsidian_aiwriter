@@ -319,65 +319,118 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     }, [isLoading]);
 
     // 发送后"立即吸顶"：用 useLayoutEffect 确保 React 已把新消息渲染进 DOM
+    // 需求1：发送query之后，query应该立即被滚动至聊天窗口顶端
     useLayoutEffect(() => {
-        if (!needScrollToQueryRef.current) return;
+        if (!needScrollToQueryRef.current) return undefined;
 
         const container = messagesContainerRef.current;
         const id = lastUserMessageIdRef.current;
-        if (!container || !id) return;
+        if (!container || !id) return undefined;
 
-        const el = document.getElementById(id);
-        if (!el) return;
+        // 执行滚动到顶部的逻辑
+        const performScrollToTop = () => {
+            const el = document.getElementById(id);
+            if (!el) return false;
 
-        const section = el.closest('.voyaru-qa-section') as HTMLElement | null;
-        if (!section) return;
+            const section = el.closest('.voyaru-qa-section') as HTMLElement | null;
+            if (!section) return false;
 
-        // 立即将新消息滚动到容器顶部（不使用动画，确保瞬时响应）
-        // 使用 offsetTop 获取 section 相对于容器的位置
-        const targetScrollTop = section.offsetTop;
+            // 立即将新消息滚动到容器顶部（不使用动画，确保瞬时响应）
+            // 使用 offsetTop 获取 section 相对于容器的位置
+            const targetScrollTop = section.offsetTop;
+            
+            // 直接设置 scrollTop，不使用任何延迟或动画
+            isProgrammaticScrollRef.current = true;
+            container.scrollTop = targetScrollTop;
+            
+            // 在下一帧重置程序滚动标志
+            requestAnimationFrame(() => {
+                isProgrammaticScrollRef.current = false;
+            });
+
+            // 计算并设置 spacer：仅用于"内容不足一屏时"的美观填充
+            const containerHeight = container.clientHeight;
+            const sectionHeight = section.offsetHeight;
+            
+            if (sectionHeight < containerHeight) {
+                // 需要足够的空白使query可以滚动到顶部
+                let neededSpacer = containerHeight - sectionHeight;
+                neededSpacer = Math.max(20, neededSpacer);
+                setBottomSpacerHeight(`${neededSpacer}px`);
+            } else {
+                // 内容已经超过一屏，只需要少量底部空间
+                setBottomSpacerHeight('20px');
+            }
+
+            needScrollToQueryRef.current = false;
+            return true;
+        };
+
+        // 立即尝试滚动
+        const success = performScrollToTop();
         
-        // 直接设置 scrollTop，不使用任何延迟或动画
-        isProgrammaticScrollRef.current = true;
-        container.scrollTop = targetScrollTop;
+        // 如果失败（DOM还没渲染），使用 requestAnimationFrame 重试
+        if (!success) {
+            const rafId = requestAnimationFrame(() => {
+                performScrollToTop();
+            });
+            return () => cancelAnimationFrame(rafId);
+        }
         
-        // 在下一帧重置程序滚动标志
-        requestAnimationFrame(() => {
-            isProgrammaticScrollRef.current = false;
-        });
-
-        // 计算并设置 spacer：仅用于"内容不足一屏时"的美观填充
-        const containerHeight = container.clientHeight;
-        const sectionHeight = section.offsetHeight;
-        let neededSpacer = containerHeight - sectionHeight - 20;
-        neededSpacer = Math.max(20, neededSpacer);
-        setBottomSpacerHeight(`${neededSpacer}px`);
-
-        needScrollToQueryRef.current = false;
+        // 如果成功，返回空的 cleanup 函数
+        return undefined;
     }, [messages.length]);
 
     // 流式输出的智能滚动：
-    // - QA section 仍能容纳在视口内：保持 query 吸顶，不做尾部贴底
-    // - 只有当 section 超出视口后，且用户没有主动滚走：才跟随到最新输出
+    // 原则：尽可能多地展示answer
+    // 1. 如果answer长度未超出聊天窗口，保持query吸顶，不向上滚动
+    // 2. 如果answer长度超出聊天窗口，滚动到足以展示query尾部（四个按钮），不再往上滚动
+    // 3. 用户手动滚动后，停止自动跟随
     const maybeAutoScrollDuringStreaming = (section: HTMLElement | null) => {
         if (!isLoading) return;
         const container = messagesContainerRef.current;
         if (!container || !messagesEndRef.current || !section) return;
 
+        // 如果用户手动滚走了，不自动跟随
+        if (!shouldAutoFollowRef.current) return;
+
         const containerHeight = container.clientHeight;
         const sectionHeight = section.offsetHeight;
-        const fitsInViewport = sectionHeight <= (containerHeight - 20);
+        
+        // 获取query header的高度（包含按钮）
+        const header = section.querySelector('.voyaru-qa-header') as HTMLElement | null;
+        const headerHeight = header?.offsetHeight || 0;
 
-        if (fitsInViewport) {
-            const delta = Math.abs(container.scrollTop - section.offsetTop);
+        // 情况1：answer长度未超出聊天窗口
+        // 保持query吸顶，answer完整显示
+        if (sectionHeight <= containerHeight) {
+            const targetScrollTop = section.offsetTop;
+            const delta = Math.abs(container.scrollTop - targetScrollTop);
             if (delta > 2) {
-                setScrollTopSafely(container, section.offsetTop);
+                setScrollTopSafely(container, targetScrollTop);
             }
             return;
         }
 
-        if (shouldAutoFollowRef.current) {
+        // 情况2：answer长度超出聊天窗口
+        // 滚动到能看到最新内容，但不能让query完全滚出视野
+        // 确保query的底部（包含四个按钮）始终可见
+        const maxScrollTop = section.offsetTop + sectionHeight - containerHeight;
+        const minScrollTop = section.offsetTop; // query顶部
+        const idealScrollTop = section.offsetTop + headerHeight - 60; // 保留60px显示query底部按钮
+
+        // 计算当前应该滚动到的位置
+        // 优先显示最新内容，但不超过idealScrollTop（保证按钮可见）
+        let targetScrollTop = Math.min(maxScrollTop, idealScrollTop);
+        
+        // 确保不会滚动到query顶部之上
+        targetScrollTop = Math.max(minScrollTop, targetScrollTop);
+
+        // 只在需要时滚动
+        const currentScrollTop = container.scrollTop;
+        if (Math.abs(currentScrollTop - targetScrollTop) > 5) {
             isProgrammaticScrollRef.current = true;
-            messagesEndRef.current.scrollIntoView({ behavior: 'auto', block: 'end' });
+            container.scrollTop = targetScrollTop;
             requestAnimationFrame(() => {
                 isProgrammaticScrollRef.current = false;
             });
@@ -385,6 +438,8 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     };
 
     // 动态计算底部空间高度
+    // 原则3：如果长度不够填充聊天窗口，则在query尾部和聊天窗口底部之间填入一段空白，
+    // 以保证来回滚动时，可以将query滚动到聊天窗口顶部
     useEffect(() => {
         if (messages.length === 0) {
             setBottomSpacerHeight('0px');
@@ -397,16 +452,21 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                 const containerHeight = messagesContainerRef.current.clientHeight;
                 const headerHeight = lastQaSectionRef.current.querySelector('.voyaru-qa-header')?.clientHeight || 0;
                 
-                // 核心逻辑：Spacer 的高度应该刚好填满视口剩余空间
-                // 这样当滚动到底部时，Query 刚好吸顶，而内容底部刚好贴着视口底部
-                // 我们保留 40px 的缓冲空间（padding）
-                let spacerHeight = containerHeight - sectionHeight - 20;
-
-                // 限制：Spacer 不能小于 20px (保留一点底部呼吸感)
-                spacerHeight = Math.max(20, spacerHeight);
+                // 核心逻辑：
+                // 1. 如果section高度 < 容器高度：需要添加spacer，使得用户可以将query滚动到顶部
+                //    spacer高度 = 容器高度 - section高度，这样滚动到底部时，query刚好在顶部
+                // 2. 如果section高度 >= 容器高度：只需要少量spacer作为底部呼吸空间
                 
-                // 限制：Spacer 不应该超过视口高度（理论上上面的公式已经保证了，但做个兜底）
-                // 实际上不需要这个限制，因为 containerHeight - sectionHeight 自然会处理
+                let spacerHeight;
+                if (sectionHeight < containerHeight) {
+                    // 内容不足一屏，添加足够的空白使query可以滚动到顶部
+                    spacerHeight = containerHeight - sectionHeight;
+                    // 确保至少有20px的底部空间
+                    spacerHeight = Math.max(20, spacerHeight);
+                } else {
+                    // 内容超过一屏，只需要少量底部呼吸空间
+                    spacerHeight = 20;
+                }
 
                 setBottomSpacerHeight(`${spacerHeight}px`);
             }
@@ -416,15 +476,23 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         calculateSpacer();
 
         // 延迟计算，确保DOM更新（处理流式输出时的高度变化）
-        // 使用 requestAnimationFrame 可能会更流畅，但 setTimeout 足以应对
         const timer = setTimeout(calculateSpacer, 50);
+        
+        // 再次延迟计算，确保动画和渲染完成
+        const timer2 = setTimeout(calculateSpacer, 200);
 
-        return () => clearTimeout(timer);
-    }, [messages, isLoading]); // 依赖项保留 isLoading，虽然逻辑统一了，但 loading 状态变化可能影响 UI 渲染（如 icon）
+        return () => {
+            clearTimeout(timer);
+            clearTimeout(timer2);
+        };
+    }, [messages, isLoading]);
 
     // 对话完成后滚动到底部
     useEffect(() => {
         if (messages.length === 0) return;
+        
+        // 如果正在等待滚动到query顶部，不要滚动到底部
+        if (needScrollToQueryRef.current) return;
         
         // 只在非加载状态（对话完成后）滚动到底部
         if (!isLoading) {
