@@ -537,6 +537,34 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         const val = e.target.value;
         const cursorPos = e.target.selectionStart;
+        const input = e.target;
+        
+        // 检查是否正在处理占位符
+        if ((input as any)._placeholders && (input as any)._placeholders.length > 0) {
+            const placeholders = (input as any)._placeholders;
+            const lengthDiff = val.length - inputValue.length;
+            
+            // 更新所有占位符的位置（基于文本长度变化）
+            if (lengthDiff !== 0) {
+                // 找到受影响的位置（光标位置之前）
+                const changePos = cursorPos - (lengthDiff > 0 ? lengthDiff : 0);
+                
+                const updatedPlaceholders = placeholders.map((ph: any) => {
+                    // 如果占位符在变化位置之后，需要更新其位置
+                    if (ph.start >= changePos) {
+                        return {
+                            ...ph,
+                            start: ph.start + lengthDiff,
+                            end: ph.end + lengthDiff
+                        };
+                    }
+                    return ph;
+                });
+                
+                (input as any)._placeholders = updatedPlaceholders;
+            }
+        }
+        
         setInputValue(val);
 
         const trigger = detectTrigger(val, cursorPos);
@@ -621,6 +649,42 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
 
     // 键盘导航处理
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        // Tab 键处理：在占位符之间跳转
+        if (e.key === 'Tab' && !showTools && !showFiles) {
+            const input = inputRef.current;
+            if (input && (input as any)._placeholders && (input as any)._placeholders.length > 0) {
+                e.preventDefault();
+                
+                const placeholders = (input as any)._placeholders;
+                const currentIndex = (input as any)._currentPlaceholderIndex ?? 0;
+                
+                // 计算下一个占位符的索引
+                let nextIndex: number;
+                if (e.shiftKey) {
+                    // Shift+Tab: 向前
+                    nextIndex = currentIndex - 1;
+                    if (nextIndex < 0) {
+                        nextIndex = placeholders.length - 1;
+                    }
+                } else {
+                    // Tab: 向后
+                    nextIndex = currentIndex + 1;
+                    if (nextIndex >= placeholders.length) {
+                        nextIndex = 0;
+                    }
+                }
+                
+                const nextPlaceholder = placeholders[nextIndex];
+                
+                // 选中下一个占位符
+                if (nextPlaceholder) {
+                    input.setSelectionRange(nextPlaceholder.start, nextPlaceholder.end);
+                    (input as any)._currentPlaceholderIndex = nextIndex;
+                }
+                return;
+            }
+        }
+        
         // Ctrl/Cmd + Enter 发送消息
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
             e.preventDefault();
@@ -1128,11 +1192,38 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         if (trigger.type === '#' && trigger.startPos >= 0) {
             const before = inputValue.substring(0, trigger.startPos);
             const after = inputValue.substring(cursorPos);
-            setInputValue(before + tool.prompt + after);
-            // 设置光标位置
+            const newValue = before + tool.prompt + after;
+            setInputValue(newValue);
+            
+            // 查找工具 prompt 中的 {} 占位符
+            const placeholderRegex = /\{[^}]*\}/g;
+            const matches = Array.from(tool.prompt.matchAll(placeholderRegex)) as RegExpMatchArray[];
+            
             setTimeout(() => {
-                const newPos = before.length + tool.prompt.length;
-                inputRef.current?.setSelectionRange(newPos, newPos);
+                if (matches.length > 0 && matches[0]) {
+                    // 如果有占位符，选中第一个
+                    const firstMatch = matches[0];
+                    const startPos = before.length + (firstMatch.index ?? 0);
+                    const endPos = startPos + firstMatch[0].length;
+                    inputRef.current?.setSelectionRange(startPos, endPos);
+                    
+                    // 存储所有占位符的位置，用于 Tab 键跳转
+                    const placeholders = matches.map((match, idx) => ({
+                        start: before.length + (match.index ?? 0),
+                        end: before.length + (match.index ?? 0) + match[0].length,
+                        index: idx
+                    }));
+                    
+                    // 将占位符信息存储到 input 元素的自定义属性中
+                    if (inputRef.current) {
+                        (inputRef.current as any)._placeholders = placeholders;
+                        (inputRef.current as any)._currentPlaceholderIndex = 0;
+                    }
+                } else {
+                    // 没有占位符，光标放在末尾
+                    const newPos = before.length + tool.prompt.length;
+                    inputRef.current?.setSelectionRange(newPos, newPos);
+                }
                 inputRef.current?.focus();
             }, 0);
         }
