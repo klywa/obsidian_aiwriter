@@ -164,3 +164,10 @@ export const MoreHorizontalIcon = ({ size = 16, style, className }: IconProps) =
         <circle cx="5" cy="12" r="1"></circle>
     </svg>
 );
+
+export const ClockIcon = ({ size = 16, style, className }: IconProps) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
+        <circle cx="12" cy="12" r="10"></circle>
+        <polyline points="12 6 12 12 16 14"></polyline>
+    </svg>
+);

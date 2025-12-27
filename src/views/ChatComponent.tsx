@@ -2,11 +2,12 @@ import * as React from 'react';
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { AIService } from '../services/ai_service';
 import { FSService } from '../services/fs_service';
-import { SendIcon, StopIcon, PlusIcon, CloseIcon, CopyIcon, FileIcon, EditIcon, RefreshIcon, SaveIcon, UserIcon, BotIcon, ThinkingIcon, ToolIcon, TrashIcon, CheckIcon, TextSizeIcon, LogIcon, ExportIcon, ArrowUpIcon, MentionIcon, ChevronDownIcon, MoreHorizontalIcon } from '../components/Icons';
+import { SendIcon, StopIcon, PlusIcon, CloseIcon, CopyIcon, FileIcon, EditIcon, RefreshIcon, SaveIcon, UserIcon, BotIcon, ThinkingIcon, ToolIcon, TrashIcon, CheckIcon, TextSizeIcon, LogIcon, ExportIcon, ArrowUpIcon, MentionIcon, ChevronDownIcon, MoreHorizontalIcon, ClockIcon } from '../components/Icons';
 import { Message, Session, MODELS } from '../settings';
 import { Notice, Menu, TFile, MarkdownView, Platform } from 'obsidian';
 import { ExportModal } from '../modals/ExportModal';
 import { LogModal } from '../modals/LogModal';
+import { HistoryPromptModal } from '../modals/HistoryPromptModal';
 
 export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerEl?: HTMLElement }) => {
     const [sessions, setSessions] = useState<Session[]>([]);
@@ -2058,6 +2059,37 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
 
                 {/* Toolbar Buttons */}
                 <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                    {/* History Prompt Button */}
+                    <button 
+                        className="clickable-icon"
+                        onClick={() => {
+                            const modal = new HistoryPromptModal(
+                                plugin.app,
+                                messages,
+                                (query: string, files: string[]) => {
+                                    setInputValue(query);
+                                    setReferencedFiles(files);
+                                    // Focus input after a short delay
+                                    setTimeout(() => inputRef.current?.focus(), 100);
+                                }
+                            );
+                            modal.open();
+                        }}
+                        style={{ 
+                            padding: '6px', 
+                            background: 'transparent', 
+                            border: 'none', 
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                        }}
+                        title="历史 Prompt"
+                    >
+                        <ClockIcon size={16} />
+                    </button>
+                    
                      <div style={{ position: 'relative' }} ref={settingsMenuRef}>
                         <button 
                             className="clickable-icon"
