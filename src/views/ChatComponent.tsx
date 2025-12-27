@@ -318,7 +318,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         return () => container.removeEventListener('scroll', onScroll as EventListener);
     }, [isLoading]);
 
-    // 发送后“立即吸顶”：用 useLayoutEffect 确保 React 已把新消息渲染进 DOM
+    // 发送后"立即吸顶"：用 useLayoutEffect 确保 React 已把新消息渲染进 DOM
     useLayoutEffect(() => {
         if (!needScrollToQueryRef.current) return;
 
@@ -332,14 +332,25 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         const section = el.closest('.voyaru-qa-section') as HTMLElement | null;
         if (!section) return;
 
-        // 计算并设置 spacer：仅用于“内容不足一屏时”的美观填充
+        // 立即将新消息滚动到容器顶部（不使用动画，确保瞬时响应）
+        // 使用 offsetTop 获取 section 相对于容器的位置
+        const targetScrollTop = section.offsetTop;
+        
+        // 直接设置 scrollTop，不使用任何延迟或动画
+        isProgrammaticScrollRef.current = true;
+        container.scrollTop = targetScrollTop;
+        
+        // 在下一帧重置程序滚动标志
+        requestAnimationFrame(() => {
+            isProgrammaticScrollRef.current = false;
+        });
+
+        // 计算并设置 spacer：仅用于"内容不足一屏时"的美观填充
         const containerHeight = container.clientHeight;
         const sectionHeight = section.offsetHeight;
         let neededSpacer = containerHeight - sectionHeight - 20;
         neededSpacer = Math.max(20, neededSpacer);
-
         setBottomSpacerHeight(`${neededSpacer}px`);
-        setScrollTopSafely(container, section.offsetTop);
 
         needScrollToQueryRef.current = false;
     }, [messages.length]);
