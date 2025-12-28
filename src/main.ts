@@ -344,7 +344,24 @@ ${contextAfter}
     }
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, (await this.loadData()) || {});
+		const loadedData = (await this.loadData()) || {};
+		// 深度合并配置，确保新字段能够正确添加
+		this.settings = {
+			...DEFAULT_SETTINGS,
+			...loadedData,
+			// 确保 folders 对象被正确合并
+			folders: {
+				...DEFAULT_SETTINGS.folders,
+				...(loadedData.folders || {})
+			},
+			// 确保 tools 数组存在
+			tools: loadedData.tools || DEFAULT_SETTINGS.tools,
+			// 确保所有新添加的字段都有默认值
+			maxFilesInPopup: loadedData.maxFilesInPopup ?? DEFAULT_SETTINGS.maxFilesInPopup,
+			fontSize: loadedData.fontSize ?? DEFAULT_SETTINGS.fontSize,
+			contextMode: loadedData.contextMode || DEFAULT_SETTINGS.contextMode,
+			referenceMode: loadedData.referenceMode || DEFAULT_SETTINGS.referenceMode
+		};
 	}
 
 	async saveSettings() {

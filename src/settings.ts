@@ -2,6 +2,7 @@ import { App, PluginSettingTab, Setting, Plugin, TFolder, debounce } from "obsid
 import { SystemPromptModal } from "./modals/SystemPromptModal";
 import { ToolsManagerModal } from "./modals/ToolsManagerModal";
 import { FolderSuggestModal } from "./components/FolderSuggest";
+import { FolderConfigModal } from "./modals/FolderConfigModal";
 
 export interface AgentTool {
     name: string;
@@ -214,16 +215,22 @@ export class VoyaruSettingTab extends PluginSettingTab {
             });
 
         containerEl.createEl('h3', { text: 'Folder Configuration' });
-
-        this.addFolderSetting(containerEl, 'Chapters Folder', 'chapters');
-
-        this.addFolderSetting(containerEl, 'Characters Folder', 'characters');
-
-        this.addFolderSetting(containerEl, 'Outlines Folder', 'outlines');
         
-        this.addFolderSetting(containerEl, 'Notes Folder', 'notes');
-        
-        this.addFolderSetting(containerEl, 'Knowledge Folder', 'knowledge');
+        new Setting(containerEl)
+            .setName('文件夹配置')
+            .setDesc('配置各类文件的存储位置（章节、角色、大纲、笔记、知识库）')
+            .addButton(button => button
+                .setButtonText('管理文件夹')
+                .onClick(() => {
+                    new FolderConfigModal(
+                        this.app,
+                        this.plugin.settings,
+                        async (newFolders) => {
+                            this.plugin.settings.folders = newFolders;
+                            await this.plugin.saveSettings();
+                        }
+                    ).open();
+                }));
 
         containerEl.createEl('h3', { text: 'Agent Configuration' });
         
@@ -304,28 +311,4 @@ export class VoyaruSettingTab extends PluginSettingTab {
                 }));
     }
 
-    private addFolderSetting(containerEl: HTMLElement, name: string, key: keyof VoyaruSettings['folders']) {
-        new Setting(containerEl)
-            .setName(name)
-            .addText(text => {
-                text.setValue(this.plugin.settings.folders[key]);
-                text.inputEl.readOnly = true;
-                text.inputEl.addClass('folder-path-display');
-                return text;
-            })
-            .addButton(button => button
-                .setButtonText('Browse...')
-                .onClick(() => {
-                    new FolderSuggestModal(
-                        this.app,
-                        async (folder: TFolder) => {
-                            const folderPath = folder.path === '/' ? '' : folder.path;
-                            this.plugin.settings.folders[key] = folderPath;
-                            await this.plugin.saveSettings();
-                            // Refresh the display
-                            this.display();
-                        }
-                    ).open();
-                }));
-    }
 }

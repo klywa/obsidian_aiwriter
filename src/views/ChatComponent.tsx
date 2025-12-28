@@ -36,6 +36,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
     const [clearHistoryConfirm, setClearHistoryConfirm] = useState(false);
     const [collapsedQueries, setCollapsedQueries] = useState<Set<string>>(new Set());
+    const [editingLastQueryId, setEditingLastQueryId] = useState<string | null>(null); // 标记正在编辑最后一条query
     
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -732,6 +733,16 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             return;
         }
 
+        // Escape键取消编辑最后一条query（如果正在编辑）
+        if (e.key === 'Escape' && editingLastQueryId) {
+            e.preventDefault();
+            setEditingLastQueryId(null);
+            setInputValue('');
+            setReferencedFiles([]);
+            new Notice('已取消编辑');
+            return;
+        }
+
         // 普通Enter键发送（如果没有popup）
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -753,7 +764,55 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         if (!contentToSend.trim() || isLoading) return;
 
         const filesToSend = manualFiles ?? referencedFiles;
-        const historyToUse = manualHistory ?? chatHistory;
+        let historyToUse = manualHistory ?? chatHistory;
+
+        // 如果正在编辑最后一条query，需要先撤回对应的response和文件修改
+        if (editingLastQueryId && !manualContent) {
+            const msgIndex = messages.findIndex(m => m.id === editingLastQueryId);
+            if (msgIndex !== -1) {
+                console.log('Reverting changes from editing last query:', editingLastQueryId);
+                
+                // 撤回文件修改
+                const messagesToRemove = messages.slice(msgIndex);
+                for (const msg of messagesToRemove) {
+                    if (msg.role === 'model' && msg.type === 'tool_result' && msg.tool === 'writeFile' && msg.toolData && msg.toolData.undoData) {
+                        const undo = msg.toolData.undoData;
+                        try {
+                            console.log(`Reverting file change for ${undo.path}`);
+                            if (undo.previousContent === null) {
+                                await plugin.fsService.deleteFile(undo.path);
+                                new Notice(`已撤销创建: ${undo.path}`);
+                            } else {
+                                await plugin.fsService.writeFile(undo.path, undo.previousContent);
+                                new Notice(`已撤销修改: ${undo.path}`);
+                            }
+                        } catch (e) {
+                            console.error(`Failed to revert file ${undo.path}:`, e);
+                        }
+                    }
+                }
+                
+                // 计算截断的历史记录
+                const calculatedHistory = [...chatHistory];
+                while(calculatedHistory.length > 0) {
+                    const last = calculatedHistory.pop();
+                    if (last && last.role === 'user') {
+                        break;
+                    }
+                }
+                historyToUse = calculatedHistory;
+                
+                // 移除该消息及其之后的所有消息
+                const newMessages = messages.slice(0, msgIndex);
+                setMessages(newMessages);
+                
+                // 更新历史记录
+                setChatHistory(calculatedHistory);
+            }
+            
+            // 清除编辑状态
+            setEditingLastQueryId(null);
+        }
 
         const messageContent = contentToSend.trim();
         const newUserMsg: Message = { 
@@ -1111,11 +1170,31 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         }
     };
 
-    // 启动编辑模式（原地编辑）
+    // 启动编辑模式
+    // 对于最后一条query：将内容移至输入框
+    // 对于其他消息：原地编辑（保留旧逻辑，以防未来需要）
     const startEditingMessage = (messageId: string, content: string, files: string[]) => {
-        setEditingMessageId(messageId);
-        setEditingContent(content);
-        setEditingFiles(files);
+        // 检查是否是最后一条用户消息
+        const isLastUserMessage = messageId === lastUserMessageId;
+        
+        if (isLastUserMessage) {
+            // 将内容移至输入框
+            setInputValue(content);
+            setReferencedFiles(files);
+            setEditingLastQueryId(messageId);
+            // 聚焦到输入框
+            setTimeout(() => {
+                inputRef.current?.focus();
+                // 将光标移至末尾
+                const len = content.length;
+                inputRef.current?.setSelectionRange(len, len);
+            }, 0);
+        } else {
+            // 原地编辑（保留旧逻辑）
+            setEditingMessageId(messageId);
+            setEditingContent(content);
+            setEditingFiles(files);
+        }
     };
 
     // 取消编辑
@@ -2350,25 +2429,71 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     </div>
                  )}
 
+                {/* Editing Last Query Indicator */}
+                {editingLastQueryId && (
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '8px 12px',
+                        backgroundColor: 'var(--background-modifier-info)',
+                        borderRadius: '8px',
+                        marginBottom: '8px',
+                        fontSize: '0.85em',
+                        color: 'var(--text-muted)'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <EditIcon size={12} />
+                            <span>正在编辑最后一条query（发送时将撤回之前的回复和文件修改）</span>
+                        </div>
+                        <div 
+                            onClick={() => {
+                                setEditingLastQueryId(null);
+                                setInputValue('');
+                                setReferencedFiles([]);
+                            }}
+                            style={{ 
+                                cursor: 'pointer', 
+                                opacity: 0.7,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                transition: 'opacity 0.2s'
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                            onMouseLeave={e => e.currentTarget.style.opacity = '0.7'}
+                            title="取消编辑"
+                        >
+                            <CloseIcon size={14} />
+                        </div>
+                    </div>
+                )}
+
                 {/* Input Container - Sleek Pill Shape */}
                 <div style={{
                     display: 'flex',
                     flexDirection: 'column',
                     backgroundColor: 'var(--background-primary)',
                     borderRadius: '16px', // Large radius for pill look
-                    border: '1px solid var(--background-modifier-border)',
+                    border: editingLastQueryId ? '2px solid var(--interactive-accent)' : '1px solid var(--background-modifier-border)',
                     padding: '4px 12px',
                     gap: '4px',
                     transition: 'border-color 0.2s, box-shadow 0.2s',
-                    boxShadow: '0 2px 6px rgba(0,0,0,0.05)'
+                    boxShadow: editingLastQueryId ? '0 0 0 2px rgba(var(--interactive-accent-rgb), 0.1)' : '0 2px 6px rgba(0,0,0,0.05)'
                 }}
                 onFocusCapture={(e) => {
-                    e.currentTarget.style.borderColor = 'var(--interactive-accent)';
-                    e.currentTarget.style.boxShadow = '0 0 0 2px rgba(var(--interactive-accent-rgb), 0.1)';
+                    if (!editingLastQueryId) {
+                        e.currentTarget.style.borderColor = 'var(--interactive-accent)';
+                        e.currentTarget.style.boxShadow = '0 0 0 2px rgba(var(--interactive-accent-rgb), 0.1)';
+                    }
                 }}
                 onBlurCapture={(e) => {
-                    e.currentTarget.style.borderColor = 'var(--background-modifier-border)';
-                    e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.05)';
+                    if (!editingLastQueryId) {
+                        e.currentTarget.style.borderColor = 'var(--background-modifier-border)';
+                        e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.05)';
+                    }
                 }}
                 >
                     {/* Referenced Files inside input */}
