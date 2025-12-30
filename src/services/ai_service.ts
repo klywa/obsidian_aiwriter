@@ -179,9 +179,9 @@ Always read referenced files first before attempting to work with them.`;
         filePath: string,
         originalContent: string,
         abortSignal?: AbortSignal
-    ): Promise<string | null> {
+    ): Promise<{ checkResult: string, refinedContent: string | null }> {
         if (!this.settings.postCheckItems || this.settings.postCheckItems.length === 0) {
-            return null;
+            return { checkResult: "", refinedContent: null };
         }
 
         console.log(`[PostCheck] Starting post-check for ${filePath} with ${this.settings.postCheckItems.length} check items`);
@@ -287,14 +287,31 @@ ${originalContent}
 
             console.log(`[PostCheck] Received response, length: ${fullResponse.length}`);
 
-            // 解析响应，提取润色后的内容
+            // 提取检查结果和润色后的内容
+            const checkResult = this.extractCheckResult(fullResponse);
             const refinedContent = this.extractRefinedContent(fullResponse, originalContent);
             
-            return refinedContent;
+            return { checkResult, refinedContent };
         } catch (error: any) {
             console.error("[PostCheck] Error during post-check:", error);
             throw error;
         }
+    }
+
+    private extractCheckResult(response: string): string {
+        // 提取【检查结果】部分
+        const checkResultMatch = response.match(/【检查结果】\s*([\s\S]*?)(?:【润色后内容】|$)/);
+        if (checkResultMatch && checkResultMatch[1]) {
+            return checkResultMatch[1].trim();
+        }
+        
+        // 如果没有找到标记，尝试提取第一部分内容（在第一个代码块之前）
+        const beforeCodeBlock = response.split(/```/)[0];
+        if (beforeCodeBlock && beforeCodeBlock.trim().length > 10) {
+            return beforeCodeBlock.trim();
+        }
+        
+        return "正在进行后置检查...";
     }
 
     private extractRefinedContent(response: string, fallback: string): string {
@@ -654,33 +671,67 @@ ${originalContent}
                                 path: toolArgs.path
                             };
                             
+                            // 立即yield第一次writeFile的结果（中间版本）
+                            yield { type: "tool_result", tool: name, result: output, args: toolArgs, undoData: undoData };
+                            
                             // 检查是否是章节文件，如果是则触发后置检查和润色
                             const isChapterFile = this.isChapterFile(toolArgs.path);
                             if (isChapterFile && this.settings.postCheckItems && this.settings.postCheckItems.length > 0) {
                                 yield { type: "thinking", content: "正在进行后置检查和润色..." };
                                 
                                 try {
-                                    const refinedContent = await this.performPostCheckAndRefine(
+                                    const { checkResult, refinedContent } = await this.performPostCheckAndRefine(
                                         toolArgs.path,
                                         toolArgs.content,
                                         abortSignal
                                     );
                                     
+                                    // 展示检查结果
+                                    if (checkResult) {
+                                        yield { type: "thinking", content: `后置检查结果：\n\n${checkResult}` };
+                                    }
+                                    
                                     if (refinedContent && refinedContent !== toolArgs.content) {
                                         // 应用润色后的内容
                                         await this.fs.writeFile(toolArgs.path, refinedContent);
-                                        output += `\n后置检查完成，内容已润色并更新。`;
+                                        const refinedOutput = `File ${toolArgs.path} refined and updated.`;
+                                        
+                                        // yield第二次writeFile的结果（润色后版本）
+                                        yield { 
+                                            type: "tool_result", 
+                                            tool: "writeFile", 
+                                            result: refinedOutput, 
+                                            args: { path: toolArgs.path, content: refinedContent }, 
+                                            undoData: { previousContent: toolArgs.content, path: toolArgs.path }
+                                        };
+                                        
                                         yield { type: "thinking", content: "后置检查和润色已完成" };
+                                        
+                                        // 跳过后续的tool_result yield（因为已经yield过了）
+                                        functionResponses.push({
+                                            functionResponse: {
+                                                name: name,
+                                                response: { result: refinedOutput }
+                                            }
+                                        });
+                                        continue;
                                     } else {
-                                        output += `\n后置检查完成，内容无需修改。`;
-                                        yield { type: "thinking", content: "后置检查完成，内容符合要求" };
+                                        yield { type: "thinking", content: "后置检查完成，内容符合要求，无需修改" };
                                     }
                                 } catch (refineError: any) {
                                     console.error("Post-check refinement error:", refineError);
-                                    output += `\n后置检查遇到错误: ${refineError.message}`;
                                     yield { type: "thinking", content: `后置检查出错: ${refineError.message}` };
                                 }
                             }
+                            
+                            // 跳过后续的tool_result yield（因为已经yield过了）
+                            functionResponses.push({
+                                functionResponse: {
+                                    name: name,
+                                    response: { result: output }
+                                }
+                            });
+                            continue;
                         } else if (name === "readFile") {
                             output = await this.fs.readFile(toolArgs.path);
                         } else if (name === "deleteFile") {

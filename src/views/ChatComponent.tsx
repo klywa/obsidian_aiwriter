@@ -818,7 +818,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         const newUserMsg: Message = { 
             role: 'user', 
             content: messageContent,
-            id: `msg-${Date.now()}`,
+            id: `msg-${Date.now()}-${Math.random()}`,
             referencedFiles: [...filesToSend]
         };
         
@@ -1007,7 +1007,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                             role: 'model', 
                             content: chunk.content, 
                             type: 'thinking',
-                            id: `msg-${Date.now()}-thinking`
+                            id: `msg-${Date.now()}-${Math.random()}-thinking`
                         }]);
                     } else if (chunk.type === 'tool_result') {
                         // 立即更新tool_result消息
@@ -1021,14 +1021,14 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                 args: chunk.args,
                                 undoData: chunk.undoData 
                             },
-                            id: `msg-${Date.now()}-tool`
+                            id: `msg-${Date.now()}-${Math.random()}-tool`
                         }]);
                     } else if (chunk.type === 'error') {
                         console.error('Error chunk received:', chunk.content);
                         setMessages(prev => [...prev, { 
                             role: 'error', 
                             content: chunk.content,
-                            id: `msg-${Date.now()}-error`
+                            id: `msg-${Date.now()}-${Math.random()}-error`
                         }]);
                         setIsLoading(false);
                         return; 
@@ -1076,10 +1076,10 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             // 如果没有收到任何响应，显示提示
             if (!hasReceivedAnyChunk && !abortControllerRef.current?.signal.aborted) {
                 console.warn('No chunks received from stream');
-                setMessages(prev => [...prev, { 
-                    role: 'error', 
+                setMessages(prev => [...prev, {
+                    role: 'error',
                     content: "未收到模型响应。请检查 API Key 设置和网络连接。",
-                    id: `msg-${Date.now()}-error`
+                    id: `msg-${Date.now()}-${Math.random()}-error`
                 }]);
             }
 
@@ -1087,10 +1087,10 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             if (e.message === "生成已取消") return;
             console.error('Error in handleSendMessage:', e);
             const errorMessage = e?.message || e?.toString() || "发生未知错误。";
-            setMessages(prev => [...prev, { 
-                role: 'error', 
+            setMessages(prev => [...prev, {
+                role: 'error',
                 content: `错误: ${errorMessage}`,
-                id: `msg-${Date.now()}-error`
+                id: `msg-${Date.now()}-${Math.random()}-error`
             }]);
         } finally {
             setIsLoading(false);
@@ -1584,7 +1584,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             // If no group exists yet (e.g. initial system messages), create a default one
             if (!currentGroup) {
                 currentGroup = {
-                    id: `qa-group-start-${Date.now()}`,
+                    id: `qa-group-start-${Date.now()}-${Math.random()}`,
                     userMessage: null,
                     messages: []
                 };
