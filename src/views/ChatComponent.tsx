@@ -37,6 +37,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const [clearHistoryConfirm, setClearHistoryConfirm] = useState(false);
     const [collapsedQueries, setCollapsedQueries] = useState<Set<string>>(new Set());
     const [editingLastQueryId, setEditingLastQueryId] = useState<string | null>(null); // 标记正在编辑最后一条query
+    const [textareaHeight, setTextareaHeight] = useState<number>(40); // 控制textarea的动态高度
     
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -568,6 +569,28 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         }
         
         setInputValue(val);
+        
+        // 在React更新DOM后计算并调整高度
+        setTimeout(() => {
+            if (input) {
+                // 临时设置为1px以获取内容的真实高度
+                input.style.height = '1px';
+                const scrollHeight = input.scrollHeight;
+                
+                // 计算最大高度（对话栏的一半）
+                const containerHeight = messagesContainerRef.current?.clientHeight || 600;
+                const maxHeight = Math.floor(containerHeight / 2);
+                
+                // 计算新高度，不超过最大高度，不小于最小高度
+                const newHeight = Math.max(40, Math.min(scrollHeight, maxHeight));
+                
+                // 直接应用新高度到DOM（避免闪烁）
+                input.style.height = `${newHeight}px`;
+                
+                // 同时更新state（保持同步）
+                setTextareaHeight(newHeight);
+            }
+        }, 0);
 
         const trigger = detectTrigger(val, cursorPos);
         
@@ -738,6 +761,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             e.preventDefault();
             setEditingLastQueryId(null);
             setInputValue('');
+            setTextareaHeight(40); // 重置高度
             setReferencedFiles([]);
             new Notice('已取消编辑');
             return;
@@ -833,7 +857,10 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
 
         console.log('Sending message:', messageContent);
         setMessages(prev => [...prev, newUserMsg]);
-        if (!manualContent) setInputValue(''); // Only clear input if not manual (or handled elsewhere)
+        if (!manualContent) {
+            setInputValue(''); // Only clear input if not manual (or handled elsewhere)
+            setTextareaHeight(40); // 重置高度
+        }
         if (!manualFiles) setReferencedFiles([]);
         setIsLoading(true);
 
@@ -2450,6 +2477,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                             onClick={() => {
                                 setEditingLastQueryId(null);
                                 setInputValue('');
+                                setTextareaHeight(40); // 重置高度
                                 setReferencedFiles([]);
                             }}
                             style={{ 
@@ -2545,8 +2573,11 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                         placeholder="向 Voyaru 提问..."
                         style={{ 
                             width: '100%',
+                            height: `${textareaHeight}px`,
                             minHeight: '40px', 
-                            maxHeight: '160px',
+                            maxHeight: messagesContainerRef.current 
+                                ? `${Math.floor(messagesContainerRef.current.clientHeight / 2)}px` 
+                                : '300px',
                             resize: 'none',
                             padding: '8px 0',
                             border: 'none',
@@ -2556,7 +2587,8 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                             fontSize: 'inherit',
                             color: 'var(--text-normal)',
                             lineHeight: '1.5',
-                            boxShadow: 'none' // Override default focus
+                            boxShadow: 'none', // Override default focus
+                            overflow: 'auto'
                         }}
                     />
 
