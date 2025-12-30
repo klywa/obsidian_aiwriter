@@ -1,12 +1,18 @@
 import { App, PluginSettingTab, Setting, Plugin, TFolder, debounce } from "obsidian";
 import { SystemPromptModal } from "./modals/SystemPromptModal";
 import { ToolsManagerModal } from "./modals/ToolsManagerModal";
+import { PostCheckManagerModal } from "./modals/PostCheckManagerModal";
 import { FolderSuggestModal } from "./components/FolderSuggest";
 import { FolderConfigModal } from "./modals/FolderConfigModal";
 
 export interface AgentTool {
     name: string;
     prompt: string;
+}
+
+export interface PostCheckItem {
+    id: string;
+    checkPrompt: string;
 }
 
 export interface Message {
@@ -51,6 +57,7 @@ export interface VoyaruSettings {
         knowledge: string;
     };
     tools: AgentTool[];
+    postCheckItems: PostCheckItem[];
     sessions: Session[];
     lastSessionId: string | null;
     fontSize: number;
@@ -82,6 +89,17 @@ export const MODELS = [
   { id: 'gemini-3-pro-preview', name: 'Gemini 3.0 Pro (Thinking)' },
   { id: 'gemini-3-flash-preview', name: 'Gemini 3.0 Flash (Fast & Thinking)' },
   { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+];
+
+export const DEFAULT_POST_CHECK_ITEMS: PostCheckItem[] = [
+    {
+        id: "check-1",
+        checkPrompt: "检查文本是否符合既定的语言风格和文风要求，如有不符，进行调整。"
+    },
+    {
+        id: "check-2",
+        checkPrompt: "检查情节发展是否自然流畅，前后逻辑是否连贯，有无矛盾之处。"
+    }
 ];
 
 export const DEFAULT_SETTINGS: VoyaruSettings = {
@@ -164,6 +182,7 @@ Let's extra discard those non-pyrite snoozefests. Really just totally ignore eve
         knowledge: "Knowledge"
     },
     tools: DEFAULT_TOOLS,
+    postCheckItems: DEFAULT_POST_CHECK_ITEMS,
     sessions: [],
     lastSessionId: null,
     fontSize: 14,
@@ -289,6 +308,22 @@ export class VoyaruSettingTab extends PluginSettingTab {
                         this.plugin.settings.tools,
                         async (newTools) => {
                             this.plugin.settings.tools = newTools;
+                            await this.plugin.saveSettings();
+                        }
+                    ).open();
+                }));
+        
+        new Setting(containerEl)
+            .setName('管理后置检查项')
+            .setDesc('配置写作完成后的自动检查和润色规则。')
+            .addButton(button => button
+                .setButtonText('管理后置检查项')
+                .onClick(() => {
+                    new PostCheckManagerModal(
+                        this.app,
+                        this.plugin.settings.postCheckItems,
+                        async (newItems) => {
+                            this.plugin.settings.postCheckItems = newItems;
                             await this.plugin.saveSettings();
                         }
                     ).open();

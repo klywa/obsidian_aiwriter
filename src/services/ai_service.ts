@@ -169,6 +169,174 @@ Always read referenced files first before attempting to work with them.`;
         }
     }
 
+    private isChapterFile(filePath: string): boolean {
+        // 判断文件是否在章节目录中
+        const chaptersFolder = this.settings.folders?.chapters || "Chapters";
+        return filePath.startsWith(chaptersFolder + "/") || filePath.startsWith(chaptersFolder + "\\");
+    }
+
+    private async performPostCheckAndRefine(
+        filePath: string,
+        originalContent: string,
+        abortSignal?: AbortSignal
+    ): Promise<string | null> {
+        if (!this.settings.postCheckItems || this.settings.postCheckItems.length === 0) {
+            return null;
+        }
+
+        console.log(`[PostCheck] Starting post-check for ${filePath} with ${this.settings.postCheckItems.length} check items`);
+
+        // 构建后置检查的system prompt
+        const baseSystemPrompt = this.getProcessedSystemPrompt();
+        const fileTree = await this.getProjectFileTree();
+        
+        // 构建检查项列表
+        const checkItemsList = this.settings.postCheckItems
+            .map((item, index) => `${index + 1}. ${item.checkPrompt}`)
+            .join('\n\n');
+
+        const postCheckSystemPrompt = `${baseSystemPrompt}
+
+${fileTree ? `### Project File Tree (Always Available)\n\`\`\`\n${fileTree}\n\`\`\`\n\n` : ''}
+
+---
+
+## 后置检查与润色任务
+
+你现在需要对刚刚创作的内容进行后置检查和润色。
+
+### 检查项列表
+${checkItemsList}
+
+### 工作流程
+
+**第一步：分析检查**
+仔细阅读内容，对照每一条检查项进行逐项检查。你需要：
+1. 明确指出哪些地方不符合检查项的要求
+2. 说明具体的问题是什么
+3. 计划如何修改以满足要求
+
+**第二步：修改润色**
+在完成检查分析后，输出修改润色后的完整内容。要求：
+1. 修改所有不符合检查项要求的内容
+2. 保持字数不减少（可以适当增加）
+3. 不删改其他符合要求的内容
+4. 保持整体连贯性和流畅性
+
+### 输出格式
+
+请按照以下格式输出：
+
+**【检查结果】**
+（在这里输出你的检查分析结果，说明哪些地方不符合要求，准备如何修改）
+
+**【润色后内容】**
+（在这里输出修改润色后的完整内容，用\`\`\`markdown包裹）
+
+\`\`\`markdown
+（完整的润色后内容）
+\`\`\`
+
+**重要提示：**
+- 如果内容完全符合所有检查项，请在【检查结果】中说明"内容符合所有检查项要求，无需修改"，并在【润色后内容】中输出原内容。
+- 润色后的内容必须是完整的，包含所有必要的markdown格式。
+`;
+
+        const postCheckMessage = `请对以下内容进行后置检查和润色：
+
+**文件路径**: ${filePath}
+
+**原始内容**:
+\`\`\`markdown
+${originalContent}
+\`\`\`
+
+请按照system prompt中的要求，进行检查分析并输出润色后的内容。`;
+
+        // 创建临时会话进行后置检查
+        const tempSessionId = `postcheck-${Date.now()}`;
+        
+        try {
+            // 使用新的GenAI client进行独立的检查会话
+            if (!this.genAI) {
+                throw new Error("AI client not initialized");
+            }
+
+            const chat = this.genAI.chats.create({
+                model: this.settings.model || "gemini-2.0-flash",
+                config: {
+                    systemInstruction: postCheckSystemPrompt,
+                    tools: [], // 后置检查不需要工具
+                },
+                history: []
+            });
+
+            const stream = await chat.sendMessageStream({ message: postCheckMessage });
+            
+            let fullResponse = "";
+            for await (const chunk of stream) {
+                if (abortSignal?.aborted) {
+                    throw new Error("Post-check aborted");
+                }
+                
+                const text = chunk.text;
+                if (text) {
+                    fullResponse += text;
+                }
+            }
+
+            console.log(`[PostCheck] Received response, length: ${fullResponse.length}`);
+
+            // 解析响应，提取润色后的内容
+            const refinedContent = this.extractRefinedContent(fullResponse, originalContent);
+            
+            return refinedContent;
+        } catch (error: any) {
+            console.error("[PostCheck] Error during post-check:", error);
+            throw error;
+        }
+    }
+
+    private extractRefinedContent(response: string, fallback: string): string {
+        // 尝试从响应中提取【润色后内容】部分
+        
+        // 方法1: 查找【润色后内容】标记
+        const refinedSectionMatch = response.match(/【润色后内容】\s*([\s\S]*)/);
+        if (refinedSectionMatch && refinedSectionMatch[1]) {
+            let content = refinedSectionMatch[1];
+            
+            // 移除可能的markdown代码块包裹
+            const codeBlockMatch = content.match(/```(?:markdown)?\s*([\s\S]*?)\s*```/);
+            if (codeBlockMatch && codeBlockMatch[1]) {
+                return codeBlockMatch[1].trim();
+            }
+            
+            return content.trim();
+        }
+        
+        // 方法2: 查找最后一个markdown代码块
+        const allCodeBlocks = response.match(/```(?:markdown)?\s*([\s\S]*?)\s*```/g);
+        if (allCodeBlocks && allCodeBlocks.length > 0) {
+            const lastBlock = allCodeBlocks[allCodeBlocks.length - 1];
+            if (lastBlock) {
+                const match = lastBlock.match(/```(?:markdown)?\s*([\s\S]*?)\s*```/);
+                if (match && match[1]) {
+                    return match[1].trim();
+                }
+            }
+        }
+        
+        // 方法3: 如果响应中包含"无需修改"或"符合要求"，返回原内容
+        if (response.includes('无需修改') || response.includes('符合所有检查项') || response.includes('符合要求')) {
+            console.log("[PostCheck] Content meets all requirements, no changes needed");
+            return fallback;
+        }
+        
+        // 如果都失败了，返回原内容
+        console.warn("[PostCheck] Failed to extract refined content, returning original");
+        return fallback;
+    }
+
     async *streamChat(sessionId: string, history: Content[], newMessage: string, referencedFiles: string[] = [], abortSignal?: AbortSignal, systemInstructionOverride?: string): AsyncGenerator<any, void, unknown> {
         try {
         // 检查API Key
@@ -485,6 +653,34 @@ Always read referenced files first before attempting to work with them.`;
                                 previousContent: previousContent,
                                 path: toolArgs.path
                             };
+                            
+                            // 检查是否是章节文件，如果是则触发后置检查和润色
+                            const isChapterFile = this.isChapterFile(toolArgs.path);
+                            if (isChapterFile && this.settings.postCheckItems && this.settings.postCheckItems.length > 0) {
+                                yield { type: "thinking", content: "正在进行后置检查和润色..." };
+                                
+                                try {
+                                    const refinedContent = await this.performPostCheckAndRefine(
+                                        toolArgs.path,
+                                        toolArgs.content,
+                                        abortSignal
+                                    );
+                                    
+                                    if (refinedContent && refinedContent !== toolArgs.content) {
+                                        // 应用润色后的内容
+                                        await this.fs.writeFile(toolArgs.path, refinedContent);
+                                        output += `\n后置检查完成，内容已润色并更新。`;
+                                        yield { type: "thinking", content: "后置检查和润色已完成" };
+                                    } else {
+                                        output += `\n后置检查完成，内容无需修改。`;
+                                        yield { type: "thinking", content: "后置检查完成，内容符合要求" };
+                                    }
+                                } catch (refineError: any) {
+                                    console.error("Post-check refinement error:", refineError);
+                                    output += `\n后置检查遇到错误: ${refineError.message}`;
+                                    yield { type: "thinking", content: `后置检查出错: ${refineError.message}` };
+                                }
+                            }
                         } else if (name === "readFile") {
                             output = await this.fs.readFile(toolArgs.path);
                         } else if (name === "deleteFile") {

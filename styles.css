@@ -1472,3 +1472,391 @@ available in the app when your plugin is enabled.
         min-height: 44px;
     }
 }
+
+/* PostCheck Manager Modal Styles - Two-column Layout */
+.postcheck-manager-modal .modal-content {
+    width: 90vw;
+    max-width: 1200px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    min-height: 600px;
+}
+
+.postcheck-manager-header {
+    padding: 16px 20px 12px 20px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.postcheck-manager-header h2 {
+    margin: 0;
+    font-size: 18px;
+}
+
+.postcheck-manager-main {
+    display: flex;
+    flex: 1;
+    gap: 20px;
+    padding: 16px 20px;
+    overflow: hidden;
+}
+
+/* Left Panel - PostCheck Tags List */
+.postcheck-manager-left-panel {
+    width: 220px;
+    min-width: 220px;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--background-modifier-border);
+    padding-right: 16px;
+}
+
+.postcheck-list-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.postcheck-list-title {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-normal);
+}
+
+.postcheck-list-hint {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.postcheck-list-container {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.postcheck-list-container::-webkit-scrollbar {
+    width: 6px;
+}
+
+.postcheck-list-container::-webkit-scrollbar-thumb {
+    background-color: var(--background-modifier-border);
+    border-radius: 3px;
+}
+
+/* PostCheck Tag Styles */
+.postcheck-tag {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    min-height: 36px;
+    border-radius: 6px;
+    background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    user-select: none;
+    box-sizing: border-box;
+}
+
+.postcheck-tag:hover {
+    background-color: var(--background-modifier-hover);
+    transform: translateX(2px);
+}
+
+.postcheck-tag-selected {
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border-color: var(--interactive-accent);
+}
+
+.postcheck-tag-selected:hover {
+    background-color: var(--interactive-accent-hover);
+}
+
+.postcheck-tag-content {
+    flex: 1;
+    overflow: hidden;
+}
+
+.postcheck-tag-content span {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.postcheck-tag-delete {
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    font-size: 14px;
+    line-height: 1;
+    opacity: 0.6;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    margin-left: 6px;
+}
+
+.postcheck-tag-delete:hover {
+    opacity: 1;
+    background-color: var(--background-modifier-error);
+}
+
+.postcheck-tag-selected .postcheck-tag-delete:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Drag states */
+.postcheck-tag-dragging {
+    opacity: 0.4;
+    background-color: var(--background-modifier-hover);
+}
+
+.postcheck-tag-chosen {
+    opacity: 0.8;
+}
+
+.postcheck-tag-drag {
+    opacity: 1;
+    background-color: var(--background-secondary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Right Panel - Edit Area */
+.postcheck-manager-right-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    overflow-y: auto;
+    padding: 0 4px;
+}
+
+.postcheck-manager-right-panel::-webkit-scrollbar {
+    width: 6px;
+}
+
+.postcheck-manager-right-panel::-webkit-scrollbar-thumb {
+    background-color: var(--background-modifier-border);
+    border-radius: 3px;
+}
+
+.postcheck-edit-empty {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 60px 20px;
+    font-style: italic;
+}
+
+.postcheck-edit-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.postcheck-edit-field label {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-normal);
+}
+
+.postcheck-edit-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: -4px 0 4px 0;
+    line-height: 1.4;
+}
+
+.postcheck-edit-input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.postcheck-edit-input:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 2px rgba(var(--interactive-accent-rgb), 0.1);
+}
+
+.postcheck-edit-input-error {
+    border-color: var(--text-error) !important;
+    box-shadow: 0 0 0 2px rgba(var(--text-error-rgb), 0.1) !important;
+}
+
+.postcheck-edit-error {
+    font-size: 12px;
+    color: var(--text-error);
+    margin-top: 4px;
+}
+
+.postcheck-edit-textarea {
+    width: 100%;
+    min-height: 300px;
+    max-height: 500px;
+    padding: 12px;
+    font-family: var(--font-text);
+    font-size: 14px;
+    line-height: 1.6;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    resize: vertical;
+    transition: all 0.2s ease;
+}
+
+.postcheck-edit-textarea:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 2px rgba(var(--interactive-accent-rgb), 0.1);
+}
+
+.postcheck-empty-message {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 40px;
+    font-style: italic;
+}
+
+.postcheck-manager-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 16px 20px;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+/* Import/Export Buttons Container */
+.postcheck-import-export-buttons {
+    display: flex;
+    gap: 8px;
+    margin-right: auto;
+}
+
+/* Mobile Layout Optimization */
+@media (max-width: 768px) {
+    .postcheck-manager-modal .modal-content {
+        width: 95vw;
+        max-width: none;
+        max-height: 95vh;
+        min-height: auto;
+    }
+    
+    .postcheck-manager-header {
+        padding: 12px 16px;
+    }
+    
+    .postcheck-manager-header h2 {
+        font-size: 16px;
+    }
+    
+    .postcheck-manager-main {
+        flex-direction: column;
+        gap: 0;
+        padding: 0;
+        overflow-y: auto;
+    }
+    
+    .postcheck-manager-left-panel {
+        width: 100%;
+        min-width: auto;
+        border-right: none;
+        border-bottom: none;
+        padding: 12px 16px;
+        max-height: none;
+        flex: 1;
+    }
+    
+    .postcheck-list-container {
+        max-height: none;
+        gap: 8px;
+    }
+    
+    .postcheck-manager-right-panel {
+        padding: 12px 16px;
+        max-height: none;
+        flex: 1;
+        display: none;
+    }
+    
+    .postcheck-mobile-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding-bottom: 12px;
+        margin-bottom: 12px;
+        border-bottom: 1px solid var(--background-modifier-border);
+    }
+    
+    .postcheck-mobile-back-btn {
+        background: none;
+        border: none;
+        padding: 4px 8px;
+        color: var(--text-accent);
+        font-size: 14px;
+        cursor: pointer;
+    }
+    
+    .postcheck-mobile-title {
+        font-weight: 600;
+        font-size: 16px;
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    .postcheck-edit-field {
+        gap: 6px;
+    }
+    
+    .postcheck-edit-field label {
+        font-size: 13px;
+    }
+    
+    .postcheck-edit-input {
+        padding: 12px;
+        font-size: 16px;
+        min-height: 44px;
+    }
+    
+    .postcheck-edit-textarea {
+        min-height: 200px;
+        max-height: 400px;
+        padding: 12px;
+        padding-bottom: 50vh;
+        font-size: 16px;
+    }
+    
+    .postcheck-manager-buttons {
+        padding: 12px 16px;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+    
+    .postcheck-manager-buttons button {
+        flex: 1;
+        min-width: 100px;
+        min-height: 44px;
+        padding: 12px 16px;
+        font-size: 14px;
+    }
+}

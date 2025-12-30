@@ -356,6 +356,8 @@ ${contextAfter}
 			},
 			// 确保 tools 数组存在
 			tools: loadedData.tools || DEFAULT_SETTINGS.tools,
+			// 确保 postCheckItems 数组存在
+			postCheckItems: loadedData.postCheckItems || DEFAULT_SETTINGS.postCheckItems,
 			// 确保所有新添加的字段都有默认值
 			maxFilesInPopup: loadedData.maxFilesInPopup ?? DEFAULT_SETTINGS.maxFilesInPopup,
 			fontSize: loadedData.fontSize ?? DEFAULT_SETTINGS.fontSize,
