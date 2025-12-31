@@ -58,6 +58,7 @@ export interface VoyaruSettings {
     };
     tools: AgentTool[];
     postCheckItems: PostCheckItem[];
+    enablePostCheck: boolean;
     sessions: Session[];
     lastSessionId: string | null;
     fontSize: number;
@@ -105,6 +106,7 @@ export const DEFAULT_POST_CHECK_ITEMS: PostCheckItem[] = [
 export const DEFAULT_SETTINGS: VoyaruSettings = {
     apiKey: "",
     model: "gemini-3-pro-preview", // Defaulting to a sensible recent model
+    enablePostCheck: true,
     systemPrompt: `你是一个专业的通俗小说写作助手 Voyaru。
 
 你的核心目标不仅仅是聊天，而是**直接协助用户在项目中创作和管理文档**。
@@ -311,6 +313,16 @@ export class VoyaruSettingTab extends PluginSettingTab {
                             await this.plugin.saveSettings();
                         }
                     ).open();
+                }));
+        
+        new Setting(containerEl)
+            .setName('启用后置检查')
+            .setDesc('开启后，AI完成写作后会自动进行内容检查和润色。')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enablePostCheck)
+                .onChange(async (value) => {
+                    this.plugin.settings.enablePostCheck = value;
+                    await this.plugin.saveSettings();
                 }));
         
         new Setting(containerEl)

@@ -180,6 +180,12 @@ Always read referenced files first before attempting to work with them.`;
         originalContent: string,
         abortSignal?: AbortSignal
     ): Promise<{ checkResult: string, refinedContent: string | null }> {
+        // 检查后置检查是否启用
+        if (!this.settings.enablePostCheck) {
+            console.log('[PostCheck] Post-check is disabled in settings');
+            return { checkResult: "", refinedContent: null };
+        }
+        
         if (!this.settings.postCheckItems || this.settings.postCheckItems.length === 0) {
             return { checkResult: "", refinedContent: null };
         }
@@ -231,15 +237,12 @@ ${checkItemsList}
 （在这里输出你的检查分析结果，说明哪些地方不符合要求，准备如何修改）
 
 **【润色后内容】**
-（在这里输出修改润色后的完整内容，用\`\`\`markdown包裹）
-
-\`\`\`markdown
-（完整的润色后内容）
-\`\`\`
+（在这里直接输出修改润色后的完整内容，不要使用代码块包裹，直接输出markdown文本即可）
 
 **重要提示：**
 - 如果内容完全符合所有检查项，请在【检查结果】中说明"内容符合所有检查项要求，无需修改"，并在【润色后内容】中输出原内容。
 - 润色后的内容必须是完整的，包含所有必要的markdown格式。
+- **不要**使用\`\`\`markdown代码块包裹润色后的内容，直接输出即可。
 `;
 
         const postCheckMessage = `请对以下内容进行后置检查和润色：
@@ -247,11 +250,9 @@ ${checkItemsList}
 **文件路径**: ${filePath}
 
 **原始内容**:
-\`\`\`markdown
 ${originalContent}
-\`\`\`
 
-请按照system prompt中的要求，进行检查分析并输出润色后的内容。`;
+请按照system prompt中的要求，进行检查分析并输出润色后的内容。记住，【润色后内容】部分不要使用代码块包裹，直接输出markdown文本。`;
 
         // 创建临时会话进行后置检查
         const tempSessionId = `postcheck-${Date.now()}`;
@@ -320,24 +321,46 @@ ${originalContent}
         // 方法1: 查找【润色后内容】标记
         const refinedSectionMatch = response.match(/【润色后内容】\s*([\s\S]*)/);
         if (refinedSectionMatch && refinedSectionMatch[1]) {
-            let content = refinedSectionMatch[1];
+            let content = refinedSectionMatch[1].trim();
             
             // 移除可能的markdown代码块包裹
-            const codeBlockMatch = content.match(/```(?:markdown)?\s*([\s\S]*?)\s*```/);
+            // 匹配 ```markdown 或 ``` 开头的代码块
+            const codeBlockMatch = content.match(/^```(?:markdown)?\s*\n([\s\S]*?)\n```\s*$/);
             if (codeBlockMatch && codeBlockMatch[1]) {
+                console.log("[PostCheck] Extracted content from markdown code block");
                 return codeBlockMatch[1].trim();
             }
             
-            return content.trim();
+            // 如果代码块在中间位置（可能有其他文字）
+            const codeBlockInMiddle = content.match(/```(?:markdown)?\s*\n([\s\S]*?)\n```/);
+            if (codeBlockInMiddle && codeBlockInMiddle[1]) {
+                const extracted = codeBlockInMiddle[1].trim();
+                // 验证提取的内容看起来像是完整的文章内容（包含markdown标题等）
+                if (extracted.includes('#') || extracted.length > 100) {
+                    console.log("[PostCheck] Extracted content from code block in middle");
+                    return extracted;
+                }
+            }
+            
+            // 如果没有代码块包裹，直接返回内容
+            // 但需要清理可能存在的单独的```标记
+            content = content.replace(/^```(?:markdown)?\s*\n?/, '').replace(/\n?```\s*$/, '');
+            
+            // 如果内容看起来合理（不是很短的解释文字），直接返回
+            if (content.length > 50) {
+                console.log("[PostCheck] Using content directly without code block");
+                return content;
+            }
         }
         
-        // 方法2: 查找最后一个markdown代码块
-        const allCodeBlocks = response.match(/```(?:markdown)?\s*([\s\S]*?)\s*```/g);
+        // 方法2: 查找最后一个markdown代码块（作为后备方案）
+        const allCodeBlocks = response.match(/```(?:markdown)?\s*\n([\s\S]*?)\n```/g);
         if (allCodeBlocks && allCodeBlocks.length > 0) {
             const lastBlock = allCodeBlocks[allCodeBlocks.length - 1];
             if (lastBlock) {
-                const match = lastBlock.match(/```(?:markdown)?\s*([\s\S]*?)\s*```/);
-                if (match && match[1]) {
+                const match = lastBlock.match(/```(?:markdown)?\s*\n([\s\S]*?)\n```/);
+                if (match && match[1] && match[1].trim().length > 50) {
+                    console.log("[PostCheck] Using last code block as fallback");
                     return match[1].trim();
                 }
             }
