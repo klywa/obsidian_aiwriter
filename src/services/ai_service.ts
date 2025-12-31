@@ -718,25 +718,43 @@ ${originalContent}
 
                      try {
                         if (name === "writeFile") {
+                            // 智能修正文件名：如果模型尝试写入 "Untitled"，尝试从内容中提取标题
+                            let targetPath = toolArgs.path;
+                            const fileName = targetPath.split('/').pop() || "";
+                            
+                            if (fileName.toLowerCase().startsWith("untitled")) {
+                                // 尝试从内容第一行提取标题 (# 第X回 标题)
+                                const firstLine = toolArgs.content.trim().split('\n')[0] || "";
+                                const match = firstLine.match(/^#\s*(第.+回\s+.+)$/);
+                                if (match && match[1]) {
+                                    // 保留原目录，替换文件名
+                                    const dir = targetPath.substring(0, targetPath.lastIndexOf('/'));
+                                    const newName = match[1].trim() + ".md"; // 确保有.md后缀
+                                    targetPath = dir ? `${dir}/${newName}` : newName;
+                                    console.log(`[SmartRename] Renamed ${toolArgs.path} to ${targetPath} based on content title.`);
+                                }
+                            }
+
                             // Capture previous content for undo
-                            const previousContent = await this.fs.writeFile(toolArgs.path, toolArgs.content);
-                            output = `File ${toolArgs.path} written successfully.`;
+                            const previousContent = await this.fs.writeFile(targetPath, toolArgs.content);
+                            output = `File ${targetPath} written successfully.`;
                             undoData = {
                                 previousContent: previousContent,
-                                path: toolArgs.path
+                                path: targetPath
                             };
                             
                             // 立即yield第一次writeFile的结果（中间版本）
-                            yield { type: "tool_result", tool: name, result: output, args: toolArgs, undoData: undoData };
+                            const updatedArgs = { ...toolArgs, path: targetPath };
+                            yield { type: "tool_result", tool: name, result: output, args: updatedArgs, undoData: undoData };
                             
                             // 检查是否是章节文件，如果是则触发后置检查和润色
-                            const isChapterFile = this.isChapterFile(toolArgs.path);
+                            const isChapterFile = this.isChapterFile(targetPath);
                             if (isChapterFile && this.settings.enablePostCheck && this.settings.postCheckItems && this.settings.postCheckItems.length > 0) {
                                 yield { type: "thinking", content: "正在进行后置检查和润色..." };
                                 
                                 try {
                                     const { checkResult, refinedContent } = await this.performPostCheckAndRefine(
-                                        toolArgs.path,
+                                        targetPath,
                                         toolArgs.content,
                                         abortSignal
                                     );
@@ -748,16 +766,16 @@ ${originalContent}
                                     
                                     if (refinedContent && refinedContent !== toolArgs.content) {
                                         // 应用润色后的内容
-                                        await this.fs.writeFile(toolArgs.path, refinedContent);
-                                        const refinedOutput = `File ${toolArgs.path} refined and updated.`;
+                                        await this.fs.writeFile(targetPath, refinedContent);
+                                        const refinedOutput = `File ${targetPath} refined and updated.`;
                                         
                                         // yield第二次writeFile的结果（润色后版本）
                                         yield { 
                                             type: "tool_result", 
                                             tool: "writeFile", 
                                             result: refinedOutput, 
-                                            args: { path: toolArgs.path, content: refinedContent }, 
-                                            undoData: { previousContent: toolArgs.content, path: toolArgs.path }
+                                            args: { path: targetPath, content: refinedContent }, 
+                                            undoData: { previousContent: toolArgs.content, path: targetPath }
                                         };
                                         
                                         yield { type: "thinking", content: "后置检查和润色已完成" };
