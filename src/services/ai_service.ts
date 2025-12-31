@@ -699,7 +699,7 @@ ${originalContent}
                             
                             // 检查是否是章节文件，如果是则触发后置检查和润色
                             const isChapterFile = this.isChapterFile(toolArgs.path);
-                            if (isChapterFile && this.settings.postCheckItems && this.settings.postCheckItems.length > 0) {
+                            if (isChapterFile && this.settings.enablePostCheck && this.settings.postCheckItems && this.settings.postCheckItems.length > 0) {
                                 yield { type: "thinking", content: "正在进行后置检查和润色..." };
                                 
                                 try {
