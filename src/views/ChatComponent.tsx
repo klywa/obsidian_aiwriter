@@ -1139,8 +1139,8 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             // 如果没有收到任何响应，显示提示
             if (!hasReceivedAnyChunk && !abortControllerRef.current?.signal.aborted) {
                 console.warn('No chunks received from stream');
-                setMessages(prev => [...prev, {
-                    role: 'error',
+                setMessages(prev => [...prev, { 
+                    role: 'error', 
                     content: "未收到模型响应。请检查 API Key 设置和网络连接。",
                     id: `msg-${Date.now()}-${Math.random()}-error`
                 }]);
@@ -1150,8 +1150,8 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             if (e.message === "生成已取消") return;
             console.error('Error in handleSendMessage:', e);
             const errorMessage = e?.message || e?.toString() || "发生未知错误。";
-            setMessages(prev => [...prev, {
-                role: 'error',
+            setMessages(prev => [...prev, { 
+                role: 'error', 
                 content: `错误: ${errorMessage}`,
                 id: `msg-${Date.now()}-${Math.random()}-error`
             }]);
@@ -2328,8 +2328,10 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                         cursor: 'pointer',
                                         fontSize: '13px',
                                         borderRadius: '4px',
-                                        color: clearHistoryConfirm ? 'var(--text-error)' : 'var(--text-normal)',
-                                        backgroundColor: clearHistoryConfirm ? 'var(--background-modifier-error-hover)' : 'transparent'
+                                        color: clearHistoryConfirm ? 'var(--text-on-accent)' : 'var(--text-normal)',
+                                        backgroundColor: clearHistoryConfirm ? 'var(--text-error)' : 'transparent',
+                                        flexShrink: 0,
+                                        whiteSpace: 'nowrap'
                                     }}
                                     onMouseEnter={e => {
                                         if (!clearHistoryConfirm) e.currentTarget.style.backgroundColor = 'var(--background-modifier-hover)';
@@ -2338,10 +2340,12 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                         if (!clearHistoryConfirm) e.currentTarget.style.backgroundColor = 'transparent';
                                     }}
                                 >
-                                    <TrashIcon size={14} />
-                                    <span>{clearHistoryConfirm ? '确认清空？' : '清空历史'}</span>
-                                </div>
-                            </div>
+                                      <TrashIcon size={14} />
+                                     <span style={{ whiteSpace: 'nowrap' }}>
+                                         {clearHistoryConfirm ? '确认清空？' : '清空历史'}
+                                     </span>
+                                  </div>
+                              </div>
                         )}
                     </div>
                 </div>

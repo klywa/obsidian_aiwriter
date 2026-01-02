@@ -151,6 +151,23 @@ export default class VoyaruPlugin extends Plugin {
         );
 
 		this.addSettingTab(new VoyaruSettingTab(this.app, this));
+
+        // 监听配置文件变化（用于多端同步）
+        this.registerEvent(this.app.vault.on('modify', async (file) => {
+            if (file.path === `${this.manifest.dir}/data.json`) {
+                console.log('Detected configuration change from file system (sync), reloading settings...');
+                await this.loadSettings();
+                
+                // 如果AI服务已初始化，更新其配置
+                if (this.aiService) {
+                    this.aiService.updateSettings(this.settings);
+                }
+                
+                // 通知UI更新（如果有必要）
+                // 目前UI主要通过props或自行读取plugin.settings，
+                // 对于React组件，可能需要一种机制来通知更新，但主要配置如API Key等会立即生效。
+            }
+        }));
 	}
 
 	async onunload() {
