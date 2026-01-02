@@ -40,13 +40,20 @@ available in the app when your plugin is enabled.
 }
 
 /* Tools Manager Modal Styles - Two-column Layout */
-.tools-manager-modal .modal-content {
-    width: 90vw;
-    max-width: 1200px;
-    max-height: 90vh;
+/* 在模态框容器上设置固定尺寸 */
+.tools-manager-modal-container {
+    width: 90vw !important;
+    max-width: 1200px !important;
+    height: 80vh !important;
+    max-height: 800px !important;
+    min-height: 500px !important;
+}
+
+.tools-manager-modal {
     display: flex;
     flex-direction: column;
-    min-height: 600px;
+    height: 100%;
+    overflow: hidden;
 }
 
 .tools-manager-header {
@@ -65,6 +72,7 @@ available in the app when your plugin is enabled.
     gap: 20px;
     padding: 16px 20px;
     overflow: hidden;
+    min-height: 0; /* 关键：允许 flex 容器收缩，使子元素可以滚动 */
 }
 
 /* Left Panel - Tool Tags List */
@@ -75,6 +83,8 @@ available in the app when your plugin is enabled.
     flex-direction: column;
     border-right: 1px solid var(--background-modifier-border);
     padding-right: 16px;
+    min-height: 0; /* 关键：允许 flex 子元素收缩 */
+    overflow: hidden; /* 防止内容溢出 */
 }
 
 .tools-list-header {
@@ -104,7 +114,7 @@ available in the app when your plugin is enabled.
     display: flex;
     flex-direction: column;
     gap: 4px;
-    max-height: calc(90vh - 200px); /* 限制最大高度，防止超出窗口 */
+    min-height: 0; /* 关键：允许 flex 子元素收缩到小于内容高度 */
 }
 
 .tools-list-container::-webkit-scrollbar {
@@ -315,11 +325,12 @@ available in the app when your plugin is enabled.
 
 /* Mobile Layout Optimization */
 @media (max-width: 768px) {
-    .tools-manager-modal .modal-content {
-        width: 95vw;
-        max-width: none;
-        max-height: 95vh;
-        min-height: auto;
+    .tools-manager-modal-container {
+        width: 95vw !important;
+        max-width: none !important;
+        height: 95vh !important;
+        max-height: none !important;
+        min-height: auto !important;
     }
     
     .tools-manager-header {

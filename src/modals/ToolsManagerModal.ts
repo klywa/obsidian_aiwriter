@@ -27,6 +27,9 @@ export class ToolsManagerModal extends Modal {
         contentEl.empty();
         contentEl.addClass('tools-manager-modal');
         
+        // 在模态框容器上设置固定高度类
+        this.modalEl.addClass('tools-manager-modal-container');
+        
         // Title
         const header = contentEl.createDiv('tools-manager-header');
         header.createEl('h2', { text: '管理工具' });
