@@ -104,6 +104,7 @@ available in the app when your plugin is enabled.
     display: flex;
     flex-direction: column;
     gap: 4px;
+    max-height: calc(90vh - 200px); /* 限制最大高度，防止超出窗口 */
 }
 
 .tools-list-container::-webkit-scrollbar {
@@ -1538,6 +1539,7 @@ available in the app when your plugin is enabled.
     display: flex;
     flex-direction: column;
     gap: 4px;
+    max-height: calc(90vh - 200px); /* 限制最大高度，防止超出窗口 */
 }
 
 .postcheck-list-container::-webkit-scrollbar {

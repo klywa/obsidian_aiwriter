@@ -38,6 +38,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const [collapsedQueries, setCollapsedQueries] = useState<Set<string>>(new Set());
     const [editingLastQueryId, setEditingLastQueryId] = useState<string | null>(null); // 标记正在编辑最后一条query
     const [textareaHeight, setTextareaHeight] = useState<number>(40); // 控制textarea的动态高度
+    const [isComposing, setIsComposing] = useState(false); // 跟踪输入法状态
     
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -52,9 +53,10 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const prevSessionIdRef = useRef<string | null>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
     const needScrollToQueryRef = useRef<boolean>(false); // 标记是否需要立即吸顶
-    // 滚动控制：避免流式输出时强制“尾部贴底”导致视口下坠
+    // 滚动控制：避免流式输出时强制"尾部贴底"导致视口下坠
     const shouldAutoFollowRef = useRef<boolean>(true); // 用户未主动滚走时才自动跟随
     const isProgrammaticScrollRef = useRef<boolean>(false); // 标记程序滚动，避免误判为用户滚动
+    const userMessageRefs = useRef<Map<string, HTMLDivElement>>(new Map()); // 跟踪用户消息的DOM元素
     
     const [bottomSpacerHeight, setBottomSpacerHeight] = useState<string>('50vh');
 
@@ -266,6 +268,40 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             }));
         }
     }, [chatHistory, currentSessionId]);
+
+    // 自动折叠超过对话窗口一半高度的用户query
+    useEffect(() => {
+        if (!messagesContainerRef.current) return;
+        
+        const containerHeight = messagesContainerRef.current.clientHeight;
+        const halfHeight = containerHeight / 2;
+        
+        // 延迟检查，确保DOM已经渲染
+        const timer = setTimeout(() => {
+            const newCollapsed = new Set(collapsedQueries);
+            let hasChanges = false;
+            
+            messages.forEach((m) => {
+                if (m.role === 'user' && m.id) {
+                    const element = userMessageRefs.current.get(m.id);
+                    if (element) {
+                        const messageHeight = element.scrollHeight;
+                        // 如果消息高度超过一半，且未被手动展开过，则自动折叠
+                        if (messageHeight > halfHeight && !collapsedQueries.has(m.id)) {
+                            newCollapsed.add(m.id);
+                            hasChanges = true;
+                        }
+                    }
+                }
+            });
+            
+            if (hasChanges) {
+                setCollapsedQueries(newCollapsed);
+            }
+        }, 100);
+        
+        return () => clearTimeout(timer);
+    }, [messages, messagesContainerRef.current?.clientHeight]);
 
     // 监听从编辑器添加上下文的事件
     useEffect(() => {
@@ -767,8 +803,8 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             return;
         }
 
-        // 普通Enter键发送（如果没有popup）
-        if (e.key === 'Enter' && !e.shiftKey) {
+        // 普通Enter键发送（如果没有popup且不在输入法composition中）
+        if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
             e.preventDefault();
             handleSendMessage();
         }
@@ -1894,7 +1930,14 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                         </div>
                     ) : (
                         /* Normal User Message (Full Width Box Style with Background) */
-                        <div style={{ width: '100%', position: 'relative' }}>
+                        <div 
+                            ref={(el) => {
+                                if (el && m.id && m.role === 'user') {
+                                    userMessageRefs.current.set(m.id, el);
+                                }
+                            }}
+                            style={{ width: '100%', position: 'relative' }}
+                        >
                             {/* 折叠/展开按钮 - 仅对用户消息显示 */}
                             {m.role === 'user' && (
                                 <div
@@ -2570,6 +2613,8 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                         value={inputValue}
                         onChange={handleInputChange}
                         onKeyDown={handleKeyDown}
+                        onCompositionStart={() => setIsComposing(true)}
+                        onCompositionEnd={() => setIsComposing(false)}
                         placeholder="向 Voyaru 提问..."
                         style={{ 
                             width: '100%',
