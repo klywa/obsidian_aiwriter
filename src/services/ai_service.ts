@@ -77,15 +77,15 @@ Always read referenced files first before attempting to work with them.`;
     }
 
     /**
-     * 尝试从用户配置的知识库或笔记目录读取风格指南文件
-     * @returns 风格指南内容，如果不存在则返回 null
+     * 尝试查找用户配置的知识库或笔记目录中的风格指南文件路径
+     * @returns 风格指南文件路径，如果不存在则返回 null
      */
-    async getStyleGuideContent(): Promise<string | null> {
+    async findStyleGuidePath(): Promise<string | null> {
         // 兼容有无 .md 后缀的文件名（Obsidian 中不显示 .md）
         const styleGuideFileNames = ["风格指南.md", "风格指南"];
         const folders = this.settings.folders;
         
-        // 按优先级尝试读取用户配置的目录：知识库目录 > 笔记目录
+        // 按优先级尝试查找用户配置的目录：知识库目录 > 笔记目录
         // folders.knowledge 和 folders.notes 是用户在插件设置中配置的实际目录路径
         const searchPaths: string[] = [];
         for (const folder of [folders?.knowledge, folders?.notes]) {
@@ -101,7 +101,7 @@ Always read referenced files first before attempting to work with them.`;
                 const content = await this.fs.readFile(path);
                 if (content && content.trim().length > 0) {
                     console.log(`[AIService] Found style guide at: ${path}`);
-                    return content;
+                    return path;
                 }
             } catch (e) {
                 // 文件不存在，继续尝试下一个路径
@@ -113,15 +113,24 @@ Always read referenced files first before attempting to work with them.`;
     }
 
     /**
-     * 获取完整的 system prompt（包含风格指南）
+     * 获取完整的 system prompt（包含风格指南引用指令）
      */
     async getFullSystemPrompt(): Promise<string> {
         let prompt = this.getProcessedSystemPrompt();
         
-        // 尝试加载风格指南
-        const styleGuide = await this.getStyleGuideContent();
-        if (styleGuide) {
-            prompt += `\n\n---\n\n### 📖 风格指南\n\n以下是本项目的风格指南，在创作内容时必须严格遵循：\n\n${styleGuide}`;
+        // 查找风格指南文件路径
+        const styleGuidePath = await this.findStyleGuidePath();
+        if (styleGuidePath) {
+            prompt += `\n\n---\n\n### 📖 风格指南（必读）
+
+**重要**：本项目存在风格指南文件，位于 \`${styleGuidePath}\`。
+
+**强制要求**：在进行任何创作任务之前，你必须首先使用 \`readFile\` 工具读取风格指南的完整内容，并在创作过程中严格遵循其中的所有规范和要求。
+
+请立即执行：
+1. 调用 \`readFile("${styleGuidePath}")\` 读取风格指南
+2. 仔细理解并记住其中的风格要求
+3. 在后续创作中严格遵循这些要求`;
         }
         
         return prompt;
