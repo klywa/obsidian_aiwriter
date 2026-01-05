@@ -1278,6 +1278,60 @@ available in the app when your plugin is enabled.
     transform: translateY(1px);
 }
 
+/* History Prompt Item Actions */
+.history-prompt-item {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.history-prompt-actions {
+    display: flex;
+    gap: 8px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.history-prompt-item:hover .history-prompt-actions {
+    opacity: 1;
+}
+
+.history-prompt-btn {
+    padding: 4px 12px;
+    font-size: 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid var(--background-modifier-border);
+    background-color: var(--background-primary);
+    color: var(--text-muted);
+}
+
+.history-prompt-btn:hover {
+    background-color: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.history-prompt-btn-use {
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border-color: var(--interactive-accent);
+}
+
+.history-prompt-btn-use:hover {
+    background-color: var(--interactive-accent-hover);
+    color: var(--text-on-accent);
+}
+
+.history-prompt-btn-tool {
+    background-color: var(--background-secondary);
+}
+
+.history-prompt-btn-tool:hover {
+    background-color: var(--background-modifier-hover);
+    border-color: var(--interactive-accent);
+}
+
 /* Mobile optimizations for history prompt modal */
 @media (max-width: 600px) {
     .history-prompt-modal .modal-content {
@@ -1316,6 +1370,17 @@ available in the app when your plugin is enabled.
     .history-prompt-btn-close {
         width: 100%;
         min-height: 44px;
+    }
+    
+    .history-prompt-actions {
+        opacity: 1;
+        flex-wrap: wrap;
+    }
+    
+    .history-prompt-btn {
+        padding: 8px 16px;
+        font-size: 13px;
+        min-height: 36px;
     }
 }
 

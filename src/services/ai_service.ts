@@ -76,6 +76,57 @@ Always read referenced files first before attempting to work with them.`;
         return prompt;
     }
 
+    /**
+     * 尝试从用户配置的知识库或笔记目录读取风格指南文件
+     * @returns 风格指南内容，如果不存在则返回 null
+     */
+    async getStyleGuideContent(): Promise<string | null> {
+        // 兼容有无 .md 后缀的文件名（Obsidian 中不显示 .md）
+        const styleGuideFileNames = ["风格指南.md", "风格指南"];
+        const folders = this.settings.folders;
+        
+        // 按优先级尝试读取用户配置的目录：知识库目录 > 笔记目录
+        // folders.knowledge 和 folders.notes 是用户在插件设置中配置的实际目录路径
+        const searchPaths: string[] = [];
+        for (const folder of [folders?.knowledge, folders?.notes]) {
+            if (folder) {
+                for (const fileName of styleGuideFileNames) {
+                    searchPaths.push(`${folder}/${fileName}`);
+                }
+            }
+        }
+        
+        for (const path of searchPaths) {
+            try {
+                const content = await this.fs.readFile(path);
+                if (content && content.trim().length > 0) {
+                    console.log(`[AIService] Found style guide at: ${path}`);
+                    return content;
+                }
+            } catch (e) {
+                // 文件不存在，继续尝试下一个路径
+            }
+        }
+        
+        console.log(`[AIService] No style guide found in configured knowledge or notes folders`);
+        return null;
+    }
+
+    /**
+     * 获取完整的 system prompt（包含风格指南）
+     */
+    async getFullSystemPrompt(): Promise<string> {
+        let prompt = this.getProcessedSystemPrompt();
+        
+        // 尝试加载风格指南
+        const styleGuide = await this.getStyleGuideContent();
+        if (styleGuide) {
+            prompt += `\n\n---\n\n### 📖 风格指南\n\n以下是本项目的风格指南，在创作内容时必须严格遵循：\n\n${styleGuide}`;
+        }
+        
+        return prompt;
+    }
+
     async getProjectFileTree(): Promise<string> {
         const folders = this.settings.folders;
         const folderKeys: (keyof typeof folders)[] = ['chapters', 'characters', 'outlines', 'notes', 'knowledge'];
@@ -192,8 +243,8 @@ Always read referenced files first before attempting to work with them.`;
 
         console.log(`[PostCheck] Starting post-check for ${filePath} with ${this.settings.postCheckItems.length} check items`);
 
-        // 构建后置检查的system prompt
-        const baseSystemPrompt = this.getProcessedSystemPrompt();
+        // 构建后置检查的system prompt（包含风格指南）
+        const baseSystemPrompt = await this.getFullSystemPrompt();
         const fileTree = await this.getProjectFileTree();
         
         // 构建检查项列表
@@ -433,7 +484,7 @@ ${originalContent}
         }
 
         // Prepare System Prompt and File Tree
-        const baseSystemPrompt = systemInstructionOverride || this.getProcessedSystemPrompt();
+        const baseSystemPrompt = systemInstructionOverride || await this.getFullSystemPrompt();
         const fileTree = await this.getProjectFileTree();
         const fullSystemPrompt = baseSystemPrompt + (fileTree ? `\n\n### Project File Tree (Always Available)\n\`\`\`\n${fileTree}\n\`\`\`\n` : "");
         

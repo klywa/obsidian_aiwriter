@@ -10,13 +10,29 @@ export class ToolsManagerModal extends Modal {
     private selectedIndex: number = -1; // 初始化为 -1，表示未选中任何工具
     private draggedIndex: number | null = null;
     private sortableInstance: any = null; // 保存 Sortable 实例
+    private initialTool: AgentTool | null = null; // 用于预填充的初始工具
+    private shouldFocusNameInput: boolean = false; // 是否需要聚焦名称输入框
 
-    constructor(app: App, tools: AgentTool[], onSave: (tools: AgentTool[]) => void) {
+    constructor(app: App, tools: AgentTool[], onSave: (tools: AgentTool[]) => void, initialTool?: AgentTool) {
         super(app);
         this.tools = JSON.parse(JSON.stringify(tools)); // Deep copy
         this.onSave = onSave;
-        // 如果有工具，桌面端默认选中第一个，移动端不选中
-        if (this.tools.length > 0 && !Platform.isMobile) {
+        this.initialTool = initialTool || null;
+        
+        // 如果有初始工具，添加到列表并选中
+        if (this.initialTool) {
+            // Check for default name conflicts
+            let newName = this.initialTool.name || '新工具';
+            let counter = 1;
+            while (this.tools.some(t => t.name === newName)) {
+                newName = `新工具 ${counter}`;
+                counter++;
+            }
+            this.tools.push({ name: newName, prompt: this.initialTool.prompt });
+            this.selectedIndex = this.tools.length - 1;
+            this.shouldFocusNameInput = true;
+        } else if (this.tools.length > 0 && !Platform.isMobile) {
+            // 如果有工具，桌面端默认选中第一个，移动端不选中
             this.selectedIndex = 0;
         }
     }
@@ -291,6 +307,15 @@ export class ToolsManagerModal extends Modal {
             value: tool.name,
             cls: 'tool-edit-input'
         });
+        
+        // 如果需要聚焦名称输入框，使用延迟确保DOM已渲染
+        if (this.shouldFocusNameInput) {
+            setTimeout(() => {
+                nameInput.focus();
+                nameInput.select();
+            }, 50);
+            this.shouldFocusNameInput = false;
+        }
         
         nameInput.addEventListener('input', (e) => {
             const newName = (e.target as HTMLInputElement).value;

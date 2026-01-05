@@ -45,6 +45,13 @@ export interface Session {
     timestamp: number;
 }
 
+export interface QueryHistoryItem {
+    id: string;
+    query: string;
+    referencedFiles: string[];
+    timestamp: number;
+}
+
 export interface VoyaruSettings {
     apiKey: string;
     model: string;
@@ -62,9 +69,11 @@ export interface VoyaruSettings {
     sessions: Session[];
     lastSessionId: string | null;
     fontSize: number;
-    contextMode: 'wysiwyg' | 'server';
+    contextMode: 'wysiwyg' | 'server' | 'single';
     referenceMode: 'content' | 'path';
     maxFilesInPopup: number;
+    queryHistory: QueryHistoryItem[];
+    sendWithShiftEnter: boolean;
 }
 
 export const DEFAULT_TOOLS: AgentTool[] = [
@@ -107,6 +116,8 @@ export const DEFAULT_SETTINGS: VoyaruSettings = {
     apiKey: "",
     model: "gemini-3-pro-preview", // Defaulting to a sensible recent model
     enablePostCheck: true,
+    queryHistory: [],
+    sendWithShiftEnter: false,
     systemPrompt: `你是一个专业的通俗小说写作助手 Voyaru。
 
 你的核心目标不仅仅是聊天，而是**直接协助用户在项目中创作和管理文档**。
@@ -262,8 +273,9 @@ export class VoyaruSettingTab extends PluginSettingTab {
                 dropdown
                     .addOption('wysiwyg', '所见即所得 (完全同步)')
                     .addOption('server', '服务器维护 (节省Token)')
+                    .addOption('single', '单轮对话 (不发送历史)')
                     .setValue(this.plugin.settings.contextMode || 'wysiwyg')
-                    .onChange(async (value) => {
+                    .onChange(async (value: 'wysiwyg' | 'server' | 'single') => {
                         this.plugin.settings.contextMode = value;
                         await this.plugin.saveSettings();
                     });
@@ -342,6 +354,20 @@ export class VoyaruSettingTab extends PluginSettingTab {
                 }));
         
         containerEl.createEl('h3', { text: 'UI Configuration' });
+        
+        new Setting(containerEl)
+            .setName('发送方式')
+            .setDesc('选择发送消息的快捷键方式')
+            .addDropdown(dropdown => {
+                dropdown
+                    .addOption('enter', 'Enter 发送（Shift+Enter 换行）')
+                    .addOption('shift_enter', 'Shift+Enter 发送（Enter 换行）')
+                    .setValue(this.plugin.settings.sendWithShiftEnter ? 'shift_enter' : 'enter')
+                    .onChange(async (value) => {
+                        this.plugin.settings.sendWithShiftEnter = value === 'shift_enter';
+                        await this.plugin.saveSettings();
+                    });
+            });
         
         new Setting(containerEl)
             .setName('文件列表最大显示数量')

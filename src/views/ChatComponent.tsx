@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { AIService } from '../services/ai_service';
 import { FSService } from '../services/fs_service';
 import { SendIcon, StopIcon, PlusIcon, CloseIcon, CopyIcon, FileIcon, EditIcon, RefreshIcon, SaveIcon, UserIcon, BotIcon, ThinkingIcon, ToolIcon, TrashIcon, CheckIcon, TextSizeIcon, LogIcon, ExportIcon, ArrowUpIcon, MentionIcon, ChevronDownIcon, MoreHorizontalIcon, ClockIcon } from '../components/Icons';
-import { Message, Session, MODELS } from '../settings';
+import { Message, Session, MODELS, QueryHistoryItem } from '../settings';
 import { Notice, Menu, TFile, MarkdownView, Platform } from 'obsidian';
 import { ExportModal } from '../modals/ExportModal';
 import { LogModal } from '../modals/LogModal';
@@ -803,10 +803,23 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             return;
         }
 
-        // 普通Enter键发送（如果没有popup且不在输入法composition中）
-        if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
-            e.preventDefault();
-            handleSendMessage();
+        // 根据设置决定发送方式
+        const sendWithShiftEnter = plugin.settings.sendWithShiftEnter || false;
+        
+        if (sendWithShiftEnter) {
+            // Shift+Enter 发送，Enter 换行
+            if (e.key === 'Enter' && e.shiftKey && !isComposing) {
+                e.preventDefault();
+                handleSendMessage();
+            }
+            // 普通 Enter 保持默认行为（换行）
+        } else {
+            // Enter 发送，Shift+Enter 换行（默认模式）
+            if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
+                e.preventDefault();
+                handleSendMessage();
+            }
+            // Shift+Enter 保持默认行为（换行）
         }
     };
 
@@ -882,6 +895,30 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             referencedFiles: [...filesToSend]
         };
         
+        // 保存到持久化的queryHistory（独立于session）
+        const saveQueryToHistory = async () => {
+            const queryHistoryItem: QueryHistoryItem = {
+                id: `query-${Date.now()}-${Math.random()}`,
+                query: messageContent,
+                referencedFiles: [...filesToSend],
+                timestamp: Date.now()
+            };
+            
+            // 避免重复添加相同的query
+            const existingHistory = plugin.settings.queryHistory || [];
+            const isDuplicate = existingHistory.some(
+                (item: QueryHistoryItem) => item.query === messageContent
+            );
+            
+            if (!isDuplicate) {
+                // 保留最近100条记录
+                const updatedHistory = [queryHistoryItem, ...existingHistory].slice(0, 100);
+                plugin.settings.queryHistory = updatedHistory;
+                await plugin.saveSettings();
+            }
+        };
+        saveQueryToHistory();
+        
         lastUserMessageIdRef.current = newUserMsg.id || null;
         needScrollToQueryRef.current = true; // 标记需要立即吸顶
         shouldAutoFollowRef.current = true; // 新一轮对话默认跟随（用户若手动滚动会自动关闭）
@@ -928,8 +965,12 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             plugin.settings.model = selectedModel;
             plugin.aiService.updateSettings(plugin.settings);
 
-            console.log('Calling streamChat with history length:', historyToUse.length);
-            const stream = plugin.aiService.streamChat(currentSessionId, historyToUse, messageContent, newUserMsg.referencedFiles, abortControllerRef.current.signal);
+            // 单轮对话模式：不发送任何历史记录
+            const isSingleTurnMode = plugin.settings.contextMode === 'single';
+            const historyForRequest = isSingleTurnMode ? [] : historyToUse;
+            
+            console.log('Calling streamChat with history length:', historyForRequest.length, isSingleTurnMode ? '(single-turn mode)' : '');
+            const stream = plugin.aiService.streamChat(currentSessionId, historyForRequest, messageContent, newUserMsg.referencedFiles, abortControllerRef.current.signal);
 
             let currentResponseId = `msg-${Date.now()}-response`;
             let currentResponseContent = ""; // Accumulate text for the current message ID
@@ -2214,12 +2255,17 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                         onClick={() => {
                             const modal = new HistoryPromptModal(
                                 plugin.app,
-                                messages,
+                                plugin.settings.queryHistory || [],
+                                plugin.settings.tools || [],
                                 (query: string, files: string[]) => {
                                     setInputValue(query);
                                     setReferencedFiles(files);
                                     // Focus input after a short delay
                                     setTimeout(() => inputRef.current?.focus(), 100);
+                                },
+                                async (newTools) => {
+                                    plugin.settings.tools = newTools;
+                                    await plugin.saveSettings();
                                 }
                             );
                             modal.open();

@@ -1,18 +1,25 @@
-import { App, Modal } from "obsidian";
-import { Message } from "../settings";
+import { App, Modal, Notice } from "obsidian";
+import { QueryHistoryItem, AgentTool } from "../settings";
+import { ToolsManagerModal } from "./ToolsManagerModal";
 
 export class HistoryPromptModal extends Modal {
-    private messages: Message[];
+    private queryHistory: QueryHistoryItem[];
+    private tools: AgentTool[];
     private onSelect: (query: string, referencedFiles: string[]) => void;
+    private onToolsSave: (tools: AgentTool[]) => void;
 
     constructor(
         app: App, 
-        messages: Message[], 
-        onSelect: (query: string, referencedFiles: string[]) => void
+        queryHistory: QueryHistoryItem[],
+        tools: AgentTool[],
+        onSelect: (query: string, referencedFiles: string[]) => void,
+        onToolsSave: (tools: AgentTool[]) => void
     ) {
         super(app);
-        this.messages = messages;
+        this.queryHistory = queryHistory;
+        this.tools = tools;
         this.onSelect = onSelect;
+        this.onToolsSave = onToolsSave;
     }
 
     onOpen() {
@@ -24,16 +31,14 @@ export class HistoryPromptModal extends Modal {
         const header = contentEl.createDiv({ cls: "history-prompt-header" });
         header.createEl("h3", { text: "历史 Prompt" });
         header.createEl("p", { 
-            text: "点击任意历史 prompt 将其重新加载到输入框", 
+            text: "点击任意历史 prompt 将其重新加载到输入框，或添加为工具", 
             cls: "history-prompt-subtitle" 
         });
 
-        // Filter user messages and reverse to show newest first
-        const userMessages = this.messages
-            .filter(msg => msg.role === 'user' && msg.content && msg.content.trim())
-            .reverse(); // 从新到旧
+        // Sort by timestamp (newest first)
+        const sortedHistory = [...this.queryHistory].sort((a, b) => b.timestamp - a.timestamp);
 
-        if (userMessages.length === 0) {
+        if (sortedHistory.length === 0) {
             contentEl.createDiv({ 
                 text: "暂无历史 prompt", 
                 cls: "history-prompt-empty" 
@@ -44,62 +49,60 @@ export class HistoryPromptModal extends Modal {
         // List container
         const listContainer = contentEl.createDiv({ cls: "history-prompt-list" });
 
-        userMessages.forEach((msg, index) => {
-            const item = listContainer.createDiv({ cls: "history-prompt-item" });
+        sortedHistory.forEach((item) => {
+            const itemDiv = listContainer.createDiv({ cls: "history-prompt-item" });
             
-            // Extract query text (remove file tree and other system content)
-            let displayContent = msg.content;
-            
-            // Remove "📎 Referenced Files" section if present
-            displayContent = displayContent.replace(/📎 Referenced Files[\s\S]*?(\n\n|$)/, '');
-            
-            // Remove "User Query:" prefix if present
-            if (displayContent.includes('User Query:')) {
-                const parts = displayContent.split('User Query:');
-                if (parts[1]) {
-                    displayContent = parts[1].trim();
-                }
-            }
+            // Content section
+            const contentDiv = itemDiv.createDiv({ cls: "history-prompt-content" });
             
             // Truncate if too long
             const maxLength = 200;
+            let displayContent = item.query;
             if (displayContent.length > maxLength) {
                 displayContent = displayContent.substring(0, maxLength) + '...';
             }
-
-            // Content section
-            const contentDiv = item.createDiv({ cls: "history-prompt-content" });
+            
             contentDiv.createEl("div", { 
                 text: displayContent, 
                 cls: "history-prompt-text" 
             });
 
             // Show referenced files if any
-            if (msg.referencedFiles && msg.referencedFiles.length > 0) {
+            if (item.referencedFiles && item.referencedFiles.length > 0) {
                 const filesDiv = contentDiv.createDiv({ cls: "history-prompt-files" });
                 filesDiv.createEl("span", { 
-                    text: `📎 ${msg.referencedFiles.length} 个引用文件`, 
+                    text: `📎 ${item.referencedFiles.length} 个引用文件`, 
                     cls: "history-prompt-files-badge" 
                 });
             }
 
-            // Click handler
-            item.addEventListener('click', () => {
-                // Extract original query from message content
-                let originalQuery = msg.content;
-                
-                // Remove "📎 Referenced Files" section
-                originalQuery = originalQuery.replace(/📎 Referenced Files[\s\S]*?(\n\n|$)/, '').trim();
-                
-                // Remove "User Query:" prefix and everything before it
-                if (originalQuery.includes('User Query:')) {
-                    const parts = originalQuery.split('User Query:');
-                    if (parts[1]) {
-                        originalQuery = parts[1].trim();
-                    }
-                }
-                
-                this.onSelect(originalQuery, msg.referencedFiles || []);
+            // Action buttons container
+            const actionsDiv = itemDiv.createDiv({ cls: "history-prompt-actions" });
+            
+            // Use button
+            const useBtn = actionsDiv.createEl("button", {
+                text: "使用",
+                cls: "history-prompt-btn history-prompt-btn-use"
+            });
+            useBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.onSelect(item.query, item.referencedFiles || []);
+                this.close();
+            });
+            
+            // Add to tools button
+            const addToolBtn = actionsDiv.createEl("button", {
+                text: "添加为工具",
+                cls: "history-prompt-btn history-prompt-btn-tool"
+            });
+            addToolBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.addToTools(item.query);
+            });
+
+            // Click on item to use it
+            itemDiv.addEventListener('click', () => {
+                this.onSelect(item.query, item.referencedFiles || []);
                 this.close();
             });
         });
@@ -113,9 +116,30 @@ export class HistoryPromptModal extends Modal {
         closeBtn.addEventListener('click', () => this.close());
     }
 
+    private addToTools(query: string) {
+        // Create initial tool with the query as prompt
+        const initialTool: AgentTool = {
+            name: '新工具',
+            prompt: query
+        };
+        
+        // Close this modal first
+        this.close();
+        
+        // Open ToolsManagerModal with the initial tool
+        new ToolsManagerModal(
+            this.app,
+            this.tools,
+            (newTools) => {
+                this.onToolsSave(newTools);
+                new Notice('工具已保存');
+            },
+            initialTool
+        ).open();
+    }
+
     onClose() {
         const { contentEl } = this;
         contentEl.empty();
     }
 }
-
