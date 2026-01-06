@@ -362,6 +362,31 @@ ${contextAfter}
 
 	async loadSettings() {
 		const loadedData = (await this.loadData()) || {};
+
+		// ========== 数据迁移：旧版本单一 API Key 到新版本多提供商 ==========
+		if (loadedData.apiKey && !loadedData.providers) {
+			console.log('[VoyaruPlugin] 检测到旧版本设置，正在迁移到多提供商格式...');
+
+			// 创建默认的 Gemini 提供商
+			loadedData.providers = [{
+				id: crypto.randomUUID(),
+				type: 'gemini',
+				name: 'Google Gemini',
+				apiKey: loadedData.apiKey,
+				selectedModel: loadedData.model || 'gemini-3-pro-preview',
+				models: []
+			}];
+			loadedData.activeProviderId = loadedData.providers[0].id;
+
+			// 删除旧字段
+			delete loadedData.apiKey;
+			delete loadedData.model;
+
+			// 保存迁移后的设置
+			await this.saveData(loadedData);
+			console.log('[VoyaruPlugin] 设置迁移完成');
+		}
+
 		// 深度合并配置，确保新字段能够正确添加
 		this.settings = {
 			...DEFAULT_SETTINGS,
@@ -379,18 +404,18 @@ ${contextAfter}
 			maxFilesInPopup: loadedData.maxFilesInPopup ?? DEFAULT_SETTINGS.maxFilesInPopup,
 			fontSize: loadedData.fontSize ?? DEFAULT_SETTINGS.fontSize,
 			contextMode: loadedData.contextMode || DEFAULT_SETTINGS.contextMode,
-			referenceMode: loadedData.referenceMode || DEFAULT_SETTINGS.referenceMode
+			referenceMode: loadedData.referenceMode || DEFAULT_SETTINGS.referenceMode,
+			// 确保 providers 和 activeProviderId 存在
+			providers: loadedData.providers || DEFAULT_SETTINGS.providers,
+			activeProviderId: loadedData.activeProviderId || DEFAULT_SETTINGS.activeProviderId
 		};
 	}
 
 	async saveSettings() {
 		await this.saveData(this.settings);
         if (this.aiService) {
-            // Only log if API key changed to avoid spamming console during auto-saves
-            if (this.settings.apiKey !== this.aiService['settings'].apiKey) {
-                 console.log('Updating AI service settings, API Key:', this.settings.apiKey ? '***' + this.settings.apiKey.slice(-4) : 'empty');
-            }
-            this.aiService.updateSettings(this.settings);
+            // 更新 AI Service 设置（会触发适配器重新初始化）
+            await this.aiService.updateSettings(this.settings);
         } else {
             console.warn('AI Service not initialized when saving settings');
         }

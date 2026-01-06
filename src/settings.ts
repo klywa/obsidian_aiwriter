@@ -4,6 +4,11 @@ import { ToolsManagerModal } from "./modals/ToolsManagerModal";
 import { PostCheckManagerModal } from "./modals/PostCheckManagerModal";
 import { FolderSuggestModal } from "./components/FolderSuggest";
 import { FolderConfigModal } from "./modals/FolderConfigModal";
+import { ProviderConfigModal } from "./modals/ProviderConfigModal";
+import { ProviderType, ModelInfo, PROVIDER_NAMES } from "./services/adapters";
+
+// Re-export types for convenience
+export type { ProviderType, ModelInfo };
 
 export interface AgentTool {
     name: string;
@@ -52,9 +57,25 @@ export interface QueryHistoryItem {
     timestamp: number;
 }
 
+// 新增：提供商配置接口
+export interface ProviderConfig {
+    id: string;                     // 唯一标识符
+    type: ProviderType;             // 提供商类型
+    name: string;                   // 用户自定义名称
+    apiKey: string;                 // API密钥
+    baseURL?: string;               // 自定义API端点（可选）
+    models?: ModelInfo[];           // 缓存的模型列表
+    selectedModel?: string;         // 当前选中的模型
+}
+
 export interface VoyaruSettings {
-    apiKey: string;
-    model: string;
+    // 保留旧字段以支持数据迁移
+    apiKey?: string;                // 将被迁移到providers
+    model?: string;                 // 将被迁移到providers
+
+    // 新增：多提供商配置
+    providers?: ProviderConfig[];   // 所有配置的提供商
+    activeProviderId?: string;      // 当前激活的提供商ID
     systemPrompt: string;
     folders: {
         chapters: string;
@@ -113,8 +134,23 @@ export const DEFAULT_POST_CHECK_ITEMS: PostCheckItem[] = [
 ];
 
 export const DEFAULT_SETTINGS: VoyaruSettings = {
-    apiKey: "",
-    model: "gemini-3-pro-preview", // Defaulting to a sensible recent model
+    // 旧字段保留为可选（用于迁移）
+    apiKey: undefined,
+    model: undefined,
+
+    // 新的多提供商配置
+    providers: [
+        {
+            id: 'default-gemini',
+            type: 'gemini',
+            name: 'Google Gemini',
+            apiKey: '',
+            models: [],
+            selectedModel: 'gemini-3-pro-preview'
+        }
+    ],
+    activeProviderId: 'default-gemini',
+
     enablePostCheck: true,
     queryHistory: [],
     sendWithShiftEnter: false,
@@ -222,28 +258,65 @@ export class VoyaruSettingTab extends PluginSettingTab {
              await this.plugin.saveSettings();
         }, 1000, true);
 
-        new Setting(containerEl)
-            .setName('API Key')
-            .setDesc('Gemini API Key')
-                .addText(text => text
-                .setPlaceholder('Enter your API Key')
-                .setValue(this.plugin.settings.apiKey || '')
-                .onChange(async (value) => {
-                    this.plugin.settings.apiKey = value;
-                    await saveSettingsDebounced();
-                }));
+        // ========== AI Provider Section ==========
+        containerEl.createEl('h2', { text: 'AI 提供商配置' });
 
+        // 当前激活的提供商
+        const providers = this.plugin.settings.providers || [];
+        if (providers.length > 0) {
+            new Setting(containerEl)
+                .setName('当前激活的提供商')
+                .setDesc('选择要使用的 AI 提供商')
+                .addDropdown(dropdown => {
+                    providers.forEach((provider: ProviderConfig) => {
+                        dropdown.addOption(provider.id, provider.name);
+                    });
+
+                    dropdown
+                        .setValue(this.plugin.settings.activeProviderId || '')
+                        .onChange(async (value) => {
+                            this.plugin.settings.activeProviderId = value;
+                            await this.plugin.saveSettings();
+                            // 通知 AIService 更新适配器
+                            await this.plugin.aiService.updateSettings(this.plugin.settings);
+                        });
+                });
+        } else {
+            containerEl.createEl('p', {
+                text: '⚠️ 还没有配置任何提供商，请点击下方"添加提供商"按钮',
+                cls: 'setting-item-description'
+            });
+        }
+
+        // 提供商列表
+        const providersContainer = containerEl.createDiv('providers-list');
+        providersContainer.style.marginBottom = '20px';
+        this.renderProvidersList(providersContainer);
+
+        // 添加新提供商按钮
         new Setting(containerEl)
-            .setName('Model')
-            .setDesc('Select the Gemini model to use')
-            .addDropdown(dropdown => {
-                MODELS.forEach(m => dropdown.addOption(m.id, m.name));
-                dropdown
-                .setValue(this.plugin.settings.model)
-                .onChange(async (value) => {
-                    this.plugin.settings.model = value;
-                    await this.plugin.saveSettings();
-                })
+            .setName('管理提供商')
+            .setDesc('添加、编辑或删除 AI 提供商配置')
+            .addButton(button => {
+                button
+                    .setButtonText('添加提供商')
+                    .setIcon('plus')
+                    .onClick(() => {
+                        new ProviderConfigModal(this.app, null, async (config) => {
+                            if (!this.plugin.settings.providers) {
+                                this.plugin.settings.providers = [];
+                            }
+                            this.plugin.settings.providers.push(config);
+
+                            // 如果这是第一个提供商，自动设为激活
+                            if (this.plugin.settings.providers.length === 1) {
+                                this.plugin.settings.activeProviderId = config.id;
+                            }
+
+                            await this.plugin.saveSettings();
+                            this.display(); // 重新渲染
+                        }).open();
+                    });
             });
 
         containerEl.createEl('h3', { text: 'Folder Configuration' });
@@ -382,6 +455,74 @@ export class VoyaruSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     }
                 }));
+    }
+
+    private renderProvidersList(container: HTMLElement) {
+        container.empty();
+
+        const providers = this.plugin.settings.providers || [];
+        if (providers.length === 0) {
+            return;
+        }
+
+        providers.forEach((provider: ProviderConfig, index: number) => {
+            const providerEl = container.createDiv('provider-item');
+            providerEl.style.border = '1px solid var(--background-modifier-border)';
+            providerEl.style.borderRadius = '6px';
+            providerEl.style.padding = '10px';
+            providerEl.style.marginBottom = '10px';
+            providerEl.style.backgroundColor = 'var(--background-secondary)';
+
+            new Setting(providerEl)
+                .setName(provider.name)
+                .setDesc(`${PROVIDER_NAMES[provider.type as ProviderType]} | 模型: ${provider.selectedModel || '未设置'}`)
+                .addButton(button => {
+                    button
+                        .setButtonText('编辑')
+                        .setIcon('pencil')
+                        .onClick(() => {
+                            new ProviderConfigModal(this.app, provider, async (updatedConfig) => {
+                                if (this.plugin.settings.providers) {
+                                    this.plugin.settings.providers[index] = updatedConfig;
+                                    await this.plugin.saveSettings();
+
+                                    // 如果编辑的是当前激活的提供商，重新初始化
+                                    if (this.plugin.settings.activeProviderId === updatedConfig.id) {
+                                        await this.plugin.aiService.updateSettings(this.plugin.settings);
+                                    }
+
+                                    this.display();
+                                }
+                            }).open();
+                        });
+                })
+                .addButton(button => {
+                    button
+                        .setButtonText('删除')
+                        .setIcon('trash')
+                        .setWarning()
+                        .onClick(async () => {
+                            if (this.plugin.settings.providers) {
+                                const confirmed = confirm(`确定要删除提供商 "${provider.name}" 吗？`);
+                                if (!confirmed) return;
+
+                                this.plugin.settings.providers.splice(index, 1);
+
+                                // 如果删除的是激活的提供商，清除激活状态或选择第一个
+                                if (this.plugin.settings.activeProviderId === provider.id) {
+                                    if (this.plugin.settings.providers.length > 0) {
+                                        this.plugin.settings.activeProviderId = this.plugin.settings.providers[0].id;
+                                    } else {
+                                        this.plugin.settings.activeProviderId = undefined;
+                                    }
+                                }
+
+                                await this.plugin.saveSettings();
+                                this.display();
+                            }
+                        });
+                });
+        });
     }
 
 }

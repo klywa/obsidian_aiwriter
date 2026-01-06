@@ -1,6 +1,6 @@
 import { GoogleGenAI, Content, Part, Tool, Type } from "@google/genai";
 import { FSService } from "./fs_service";
-import { VoyaruSettings, DEFAULT_SETTINGS } from "../settings";
+import { VoyaruSettings, DEFAULT_SETTINGS, ProviderConfig } from "../settings";
 import { Notice } from "obsidian";
 
 export class AIService {
@@ -16,30 +16,77 @@ export class AIService {
     }
 
     initClient() {
-         const trimmedKey = this.settings.apiKey?.trim();
-         if (trimmedKey && trimmedKey.length > 0) {
-             try {
-                 this.genAI = new GoogleGenAI({ apiKey: trimmedKey });
-                 console.log('AI client initialized successfully with @google/genai');
-             } catch (e) {
-                 console.error('Failed to initialize AI client:', e);
-                 this.genAI = null;
+         const provider = this.getActiveProvider();
+         if (!provider || !provider.apiKey || provider.apiKey.trim().length === 0) {
+             console.log('[AIService] No active provider or API key is empty');
+             this.genAI = null;
+             return;
+         }
+
+         // 目前只支持 Gemini，其他提供商的完整支持需要进一步重构
+         if (provider.type !== 'gemini') {
+             console.warn(`[AIService] Provider type "${provider.type}" is not fully supported yet. Please use Gemini.`);
+             this.genAI = null;
+             return;
+         }
+
+         try {
+             const clientConfig: any = {
+                 apiKey: provider.apiKey.trim()
+             };
+
+             if (provider.baseURL) {
+                 clientConfig.baseURL = provider.baseURL;
              }
-         } else {
-             console.log('API Key is empty, genAI set to null');
+
+             this.genAI = new GoogleGenAI(clientConfig);
+             console.log(`[AIService] Initialized ${provider.name} successfully`);
+         } catch (e) {
+             console.error('[AIService] Failed to initialize AI client:', e);
              this.genAI = null;
          }
     }
+
+    private getActiveProvider(): ProviderConfig | null {
+        if (!this.settings.activeProviderId) {
+            // 向后兼容：如果有旧的 apiKey，尝试使用它
+            if (this.settings.apiKey) {
+                return {
+                    id: 'legacy',
+                    type: 'gemini',
+                    name: 'Gemini (Legacy)',
+                    apiKey: this.settings.apiKey,
+                    selectedModel: this.settings.model || 'gemini-3-pro-preview'
+                };
+            }
+            return null;
+        }
+        return this.settings.providers?.find(p => p.id === this.settings.activeProviderId) || null;
+    }
+
+    private getCurrentModel(): string {
+        const provider = this.getActiveProvider();
+        return provider?.selectedModel || 'gemini-2.0-flash';
+    }
     
-    updateSettings(settings: VoyaruSettings) {
-        // Only re-initialize if API Key or Model has changed
-        if (this.settings.apiKey !== settings.apiKey || this.settings.model !== settings.model) {
-            console.log('API Key or Model changed, re-initializing AI client');
-            this.settings = settings;
+    async updateSettings(settings: VoyaruSettings) {
+        const oldProviderId = this.settings.activeProviderId;
+        const oldProvider = this.getActiveProvider();
+
+        this.settings = settings;
+        const newProvider = this.getActiveProvider();
+
+        // 检查是否需要重新初始化客户端
+        const needsReinit =
+            oldProviderId !== settings.activeProviderId ||
+            oldProvider?.apiKey !== newProvider?.apiKey ||
+            oldProvider?.selectedModel !== newProvider?.selectedModel ||
+            oldProvider?.type !== newProvider?.type ||
+            oldProvider?.baseURL !== newProvider?.baseURL;
+
+        if (needsReinit) {
+            console.log('[AIService] Provider configuration changed, re-initializing');
             this.initClient();
-        } else {
-            // Just update settings reference
-            this.settings = settings;
         }
     }
 
@@ -329,7 +376,7 @@ ${originalContent}
             }
 
             const chat = this.genAI.chats.create({
-                model: this.settings.model || "gemini-2.0-flash",
+                model: this.getCurrentModel(),
                 config: {
                     systemInstruction: postCheckSystemPrompt,
                     tools: [], // 后置检查不需要工具
@@ -678,7 +725,7 @@ ${originalContent}
 
         // Create chat using new SDK
             chat = this.genAI.chats.create({
-            model: this.settings.model || "gemini-2.0-flash", // Ensure string
+            model: this.getCurrentModel(),
             config: {
                     systemInstruction: fullSystemPrompt,
                 tools: tools,
@@ -715,7 +762,7 @@ ${originalContent}
 
             let stream;
             try {
-                console.log('Sending message to Gemini API, model:', this.settings.model);
+                console.log('Sending message to Gemini API, model:', this.getCurrentModel());
                 // Note: The @google/genai SDK stream method might not directly accept AbortSignal in options yet?
                 // But we can check abort status in the loop.
                 stream = await chat.sendMessageStream({ message: msgToSend });
