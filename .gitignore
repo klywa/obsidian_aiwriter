@@ -18,5 +18,8 @@ main.js
 # Exclude macOS Finder (System Explorer) View States
 .DS_Store
 
+# Exclude user data (contains API keys and personal settings)
+data.json
+
 docs/*.md
 docs

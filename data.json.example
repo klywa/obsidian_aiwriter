@@ -1,0 +1,23 @@
+{
+  "apiKey": "YOUR_GEMINI_API_KEY_HERE",
+  "model": "gemini-2.0-flash-thinking-exp-1219",
+  "systemPrompt": "",
+  "folders": {
+    "chapters": "",
+    "characters": "",
+    "outlines": "",
+    "notes": "",
+    "knowledge": ""
+  },
+  "tools": [],
+  "postCheckItems": [],
+  "enablePostCheck": false,
+  "sessions": [],
+  "lastSessionId": null,
+  "fontSize": 14,
+  "contextMode": "server",
+  "referenceMode": "path",
+  "maxFilesInPopup": 50,
+  "queryHistory": [],
+  "sendWithShiftEnter": false
+}
