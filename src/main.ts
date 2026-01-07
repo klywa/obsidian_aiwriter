@@ -22,16 +22,15 @@ export default class VoyaruPlugin extends Plugin {
         this.fsService = new FSService(this.app);
         this.promptService = new PromptService(this);
 
-        // Load prompts from prompts.json
-        try {
-            await this.promptService.loadPrompts();
-            console.log('[VoyaruPlugin] Prompts loaded successfully');
+        // Load prompts (will use embedded defaults if prompts.json is not available)
+        await this.promptService.loadPrompts();
+        console.log('[VoyaruPlugin] Prompts loaded successfully');
 
-            // Migrate settings if needed (populate from prompts.json if empty)
+        // Migrate settings if needed (populate from prompts.json if empty)
+        try {
             await this.migrateSettingsFromPrompts();
         } catch (error) {
-            console.error('[VoyaruPlugin] Failed to load prompts:', error);
-            new Notice('无法加载提示词配置，插件功能可能受限');
+            console.error('[VoyaruPlugin] Settings migration failed:', error);
         }
 
         this.aiService = new AIService(this.settings, this.fsService, this.promptService);

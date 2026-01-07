@@ -96,11 +96,12 @@ export class AIService {
     getProcessedSystemPrompt(): string {
         let prompt = this.settings.systemPrompt;
         if (!prompt || prompt.trim().length === 0) {
-            prompt = DEFAULT_SETTINGS.systemPrompt;
+            // If user hasn't configured a system prompt, use the default from PromptService
+            prompt = this.promptService.getSystemPrompt(false);
         }
-        
+
         const folders = this.settings.folders;
-        
+
         if (folders) {
             prompt = prompt.replace(/\{chapters\}/g, folders.chapters || "Chapters");
             prompt = prompt.replace(/\{characters\}/g, folders.characters || "Characters");
@@ -108,7 +109,7 @@ export class AIService {
             prompt = prompt.replace(/\{notes\}/g, folders.notes || "Notes");
             prompt = prompt.replace(/\{knowledge\}/g, folders.knowledge || "Knowledge");
         }
-        
+
         // 根据引用模式添加额外说明
         if (this.settings.referenceMode === 'path') {
             prompt += this.promptService.getReferenceModeInstruction();

@@ -3,6 +3,7 @@ import type VoyaruPlugin from "../main";
 import type { AgentTool, PostCheckItem } from "../settings";
 import { Type } from "@google/genai";
 import type { FunctionDeclaration } from "@google/genai";
+import { DEFAULT_PROMPTS } from "./default_prompts";
 
 /**
  * Multilingual text object with zh/en support
@@ -115,32 +116,32 @@ export class PromptService {
     /**
      * Load and parse prompts.json
      * Should be called during plugin initialization
+     * Falls back to embedded DEFAULT_PROMPTS if file is not available
      */
     async loadPrompts(): Promise<void> {
         try {
             const adapter = this.plugin.app.vault.adapter;
-            const basePath = (adapter as any).basePath || '';
-            const promptsPath = `${basePath}/.obsidian/plugins/obsidian_aiwriter/prompts.json`;
 
             // Try to read from plugin directory
             let content: string;
             try {
                 content = await adapter.read('.obsidian/plugins/obsidian_aiwriter/prompts.json');
+                this.prompts = JSON.parse(content);
+                console.log(`[PromptService] Loaded prompts.json version ${this.prompts?.version}`);
             } catch (e) {
-                console.error('[PromptService] Failed to load prompts.json:', e);
-                new Notice('无法加载 prompts.json 文件，将使用默认提示词');
-                throw e;
+                // File not found or read error - use embedded defaults
+                console.log('[PromptService] prompts.json not found, using embedded default prompts');
+                this.prompts = DEFAULT_PROMPTS as any;
+                console.log(`[PromptService] Loaded embedded prompts version ${this.prompts?.version}`);
             }
-
-            this.prompts = JSON.parse(content);
-            console.log(`[PromptService] Loaded prompts version ${this.prompts?.version}`);
 
             // Validate structure
             this.validatePromptsStructure();
         } catch (error) {
             console.error('[PromptService] Error loading prompts:', error);
-            new Notice('加载提示词配置失败，请检查 prompts.json 文件格式');
-            throw error;
+            // Last resort: use embedded defaults
+            console.log('[PromptService] Using embedded default prompts as fallback');
+            this.prompts = DEFAULT_PROMPTS as any;
         }
     }
 
