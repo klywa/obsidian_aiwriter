@@ -53,6 +53,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const prevSessionIdRef = useRef<string | null>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
     const needScrollToQueryRef = useRef<boolean>(false); // 标记是否需要立即吸顶
+    const lastScrollToTopTimestampRef = useRef<number>(0); // 记录最后一次吸顶的时间戳
     // 滚动控制：避免流式输出时强制"尾部贴底"导致视口下坠
     const shouldAutoFollowRef = useRef<boolean>(true); // 用户未主动滚走时才自动跟随
     const isProgrammaticScrollRef = useRef<boolean>(false); // 标记程序滚动，避免误判为用户滚动
@@ -360,65 +361,134 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     // 发送后"立即吸顶"：用 useLayoutEffect 确保 React 已把新消息渲染进 DOM
     // 需求1：发送query之后，query应该立即被滚动至聊天窗口顶端
     useLayoutEffect(() => {
+        console.log('[吸顶调试] useLayoutEffect触发', {
+            needScroll: needScrollToQueryRef.current,
+            lastUserId: lastUserMessageIdRef.current,
+            messagesLength: messages.length,
+            timestamp: Date.now()
+        });
+
         if (!needScrollToQueryRef.current) return undefined;
 
         const container = messagesContainerRef.current;
         const id = lastUserMessageIdRef.current;
-        if (!container || !id) return undefined;
+        if (!container || !id) {
+            console.warn('[吸顶调试] 容器或ID缺失', { container: !!container, id });
+            return undefined;
+        }
 
         // 执行滚动到顶部的逻辑
         const performScrollToTop = () => {
+            console.log('[吸顶调试] 尝试滚动到顶部');
+
             const el = document.getElementById(id);
+            console.log('[吸顶调试] 查找元素', { found: !!el, id });
             if (!el) return false;
 
             const section = el.closest('.voyaru-qa-section') as HTMLElement | null;
+            console.log('[吸顶调试] 查找section', { found: !!section });
             if (!section) return false;
 
             // 立即将新消息滚动到容器顶部（不使用动画，确保瞬时响应）
-            // 使用 offsetTop 获取 section 相对于容器的位置
-            const targetScrollTop = section.offsetTop;
-            
-            // 直接设置 scrollTop，不使用任何延迟或动画
-            isProgrammaticScrollRef.current = true;
-            container.scrollTop = targetScrollTop;
-            
-            // 在下一帧重置程序滚动标志
-            requestAnimationFrame(() => {
-                isProgrammaticScrollRef.current = false;
+            // 使用 getBoundingClientRect 获取精确位置
+            const sectionRect = section.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+
+            // 计算section相对于container内部滚动区域的实际偏移
+            // section当前相对于viewport的top - container相对于viewport的top + 当前滚动位置
+            const targetScrollTop = sectionRect.top - containerRect.top + container.scrollTop;
+
+            console.log('[吸顶调试] 执行滚动', {
+                from: container.scrollTop,
+                to: targetScrollTop,
+                sectionTop: sectionRect.top,
+                containerTop: containerRect.top,
+                sectionHeight: section.offsetHeight,
+                containerHeight: container.clientHeight
             });
 
             // 计算并设置 spacer：仅用于"内容不足一屏时"的美观填充
             const containerHeight = container.clientHeight;
             const sectionHeight = section.offsetHeight;
-            
+
             if (sectionHeight < containerHeight) {
                 // 需要足够的空白使query可以滚动到顶部
                 let neededSpacer = containerHeight - sectionHeight;
                 neededSpacer = Math.max(20, neededSpacer);
+                console.log('[吸顶调试] 设置spacer', { neededSpacer });
                 setBottomSpacerHeight(`${neededSpacer}px`);
             } else {
                 // 内容已经超过一屏，只需要少量底部空间
                 setBottomSpacerHeight('20px');
             }
 
+            // 使用requestAnimationFrame确保spacer的setState已生效后再滚动
+            requestAnimationFrame(() => {
+                // 重新获取位置（因为spacer变化可能影响布局）
+                const updatedSectionRect = section.getBoundingClientRect();
+                const updatedContainerRect = container.getBoundingClientRect();
+                const updatedTargetScrollTop = updatedSectionRect.top - updatedContainerRect.top + container.scrollTop;
+
+                console.log('[吸顶调试] spacer更新后重新计算滚动位置', {
+                    oldTarget: targetScrollTop,
+                    newTarget: updatedTargetScrollTop,
+                    delta: updatedTargetScrollTop - targetScrollTop
+                });
+
+                // 执行滚动
+                isProgrammaticScrollRef.current = true;
+                container.scrollTop = updatedTargetScrollTop;
+
+                // 在下一帧重置程序滚动标志
+                requestAnimationFrame(() => {
+                    isProgrammaticScrollRef.current = false;
+                });
+
+                // 添加额外的校准：在200ms后再次检查并校准（应对isLoading变化导致的spacer重算）
+                setTimeout(() => {
+                    const finalSectionRect = section.getBoundingClientRect();
+                    const finalContainerRect = container.getBoundingClientRect();
+                    const finalTargetScrollTop = finalSectionRect.top - finalContainerRect.top + container.scrollTop;
+
+                    // 如果偏移超过2px，重新校准
+                    if (Math.abs(finalTargetScrollTop) > 2) {
+                        console.log('[吸顶调试] 最终校准滚动位置', {
+                            currentOffset: finalTargetScrollTop,
+                            needAdjust: true
+                        });
+                        isProgrammaticScrollRef.current = true;
+                        container.scrollTop = container.scrollTop + finalTargetScrollTop;
+                        requestAnimationFrame(() => {
+                            isProgrammaticScrollRef.current = false;
+                        });
+                    }
+                }, 250); // 250ms后校准，确保isLoading变化和spacer重算都已完成
+            });
+
             needScrollToQueryRef.current = false;
+            lastScrollToTopTimestampRef.current = Date.now(); // 记录吸顶时间
+            console.log('[吸顶调试] ✅ 滚动成功完成（等待spacer生效）');
             return true;
         };
 
         // 立即尝试滚动
         const success = performScrollToTop();
-        
+
         // 如果失败（DOM还没渲染），使用 requestAnimationFrame 重试
         if (!success) {
+            console.log('[吸顶调试] 首次失败，requestAnimationFrame重试');
             const rafId = requestAnimationFrame(() => {
-                performScrollToTop();
+                const retrySuccess = performScrollToTop();
+                if (!retrySuccess) {
+                    console.error('[吸顶调试] ❌ 重试后仍然失败！');
+                }
             });
             return () => cancelAnimationFrame(rafId);
         }
-        
+
         // 如果成功，返回空的 cleanup 函数
         return undefined;
-    }, [messages.length]);
+    }, [messages]); // 改为监听messages对象本身，而不是length
 
     // 流式输出的智能滚动：
     // 原则：尽可能多地展示answer
@@ -433,6 +503,13 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         // 如果用户手动滚走了，不自动跟随
         if (!shouldAutoFollowRef.current) return;
 
+        // 如果刚完成吸顶（300ms冷却期），暂不自动滚动，避免重复滚动
+        const timeSinceLastScrollToTop = Date.now() - lastScrollToTopTimestampRef.current;
+        if (timeSinceLastScrollToTop < 300) {
+            console.log('[吸顶调试] 冷却期内，跳过流式输出滚动');
+            return;
+        }
+
         const containerHeight = container.clientHeight;
         const sectionHeight = section.offsetHeight;
         
@@ -440,10 +517,15 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         const header = section.querySelector('.voyaru-qa-header') as HTMLElement | null;
         const headerHeight = header?.offsetHeight || 0;
 
+        // 使用 getBoundingClientRect 获取精确位置
+        const sectionRect = section.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const sectionTopRelativeToContainer = sectionRect.top - containerRect.top + container.scrollTop;
+
         // 情况1：answer长度未超出聊天窗口
         // 保持query吸顶，answer完整显示
         if (sectionHeight <= containerHeight) {
-            const targetScrollTop = section.offsetTop;
+            const targetScrollTop = sectionTopRelativeToContainer;
             const delta = Math.abs(container.scrollTop - targetScrollTop);
             if (delta > 2) {
                 setScrollTopSafely(container, targetScrollTop);
@@ -454,9 +536,9 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         // 情况2：answer长度超出聊天窗口
         // 滚动到能看到最新内容，但不能让query完全滚出视野
         // 确保query的底部（包含四个按钮）始终可见
-        const maxScrollTop = section.offsetTop + sectionHeight - containerHeight;
-        const minScrollTop = section.offsetTop; // query顶部
-        const idealScrollTop = section.offsetTop + headerHeight - 60; // 保留60px显示query底部按钮
+        const maxScrollTop = sectionTopRelativeToContainer + sectionHeight - containerHeight;
+        const minScrollTop = sectionTopRelativeToContainer; // query顶部
+        const idealScrollTop = sectionTopRelativeToContainer + headerHeight - 60; // 保留60px显示query底部按钮
 
         // 计算当前应该滚动到的位置
         // 优先显示最新内容，但不超过idealScrollTop（保证按钮可见）
