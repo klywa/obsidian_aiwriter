@@ -3,6 +3,7 @@ import { DEFAULT_SETTINGS, VoyaruSettings, VoyaruSettingTab } from "./settings";
 import { ChatView, VIEW_TYPE_CHAT } from "./views/chat_view";
 import { AIService } from "./services/ai_service";
 import { FSService } from "./services/fs_service";
+import { PromptService } from "./services/prompt_service";
 import { LocalEditModal } from "./modals/LocalEditModal";
 import { LocalEditStatusModal } from "./modals/LocalEditStatusModal";
 
@@ -10,6 +11,7 @@ export default class VoyaruPlugin extends Plugin {
 	settings: VoyaruSettings;
     aiService: AIService;
     fsService: FSService;
+    promptService: PromptService;
     localEditStatusModal: LocalEditStatusModal | null = null;
     private localEditAbortController: AbortController | null = null;
 
@@ -18,7 +20,21 @@ export default class VoyaruPlugin extends Plugin {
 
         // Initialize Services
         this.fsService = new FSService(this.app);
-        this.aiService = new AIService(this.settings, this.fsService);
+        this.promptService = new PromptService(this);
+
+        // Load prompts from prompts.json
+        try {
+            await this.promptService.loadPrompts();
+            console.log('[VoyaruPlugin] Prompts loaded successfully');
+
+            // Migrate settings if needed (populate from prompts.json if empty)
+            await this.migrateSettingsFromPrompts();
+        } catch (error) {
+            console.error('[VoyaruPlugin] Failed to load prompts:', error);
+            new Notice('无法加载提示词配置，插件功能可能受限');
+        }
+
+        this.aiService = new AIService(this.settings, this.fsService, this.promptService);
 
         // Register View
         this.registerView(
@@ -223,52 +239,18 @@ export default class VoyaruPlugin extends Plugin {
             const contextBefore = lines.slice(Math.max(0, startLine - 5), startLine).join('\n');
             const contextAfter = lines.slice(endLine + 1, Math.min(lines.length, endLine + 6)).join('\n');
             
-            // 构建特殊的system prompt
-            // 基于已有的 system prompt 增强
+            // 使用 PromptService 构建 local edit 提示词
             const baseSystemPrompt = this.aiService.getProcessedSystemPrompt();
-            
-            // 将 "You are a text editing assistant..." 作为 User Message 的一部分，
-            // 或者通过 systemInstructionOverride 传递给 streamChat
-            // 为了避免重复包含 baseSystemPrompt (streamChat 默认会加)，我们在这里构造一个覆盖用的 System Prompt
-            // 但 Local Edit 需要明确的角色定义，可能不同于 baseSystemPrompt
-            
-            // 方案：让 streamChat 使用我们自定义的 System Prompt (包含 base + local edit instructions + file tree)
-            // 这样 streamChat 会 append file tree
-            
-            const localEditSystemInstruction = `${baseSystemPrompt}
-
-你是一个文本编辑助手。用户要求你对文档中的特定部分进行修改。
-
-**重要：仅输出对原文的修改，不要输出思考过程。**
-
-**输出规则**:
-1. 只输出修改后的文本内容。
-2. 不要包含任何 "好的"、"修改如下" 等对话用语。
-3. 不要包含任何 <think> 标签或思考过程。
-4. 不要使用 markdown 代码块包裹（除非内容本身包含代码）。
-5. 保持与上下文的连贯性。
-6. 直接输出修改后的文本，不要添加任何解释、说明或额外内容。`;
-
-            const localEditUserMessage = `
-**文件路径**: ${filePath}
-**需要修改的行数**: 第${startLine + 1}行到第${endLine + 1}行
-
-**修改前的内容**:
-\`\`\`
-${originalContent}
-\`\`\`
-
-**上下文（修改部分之前5行）**:
-\`\`\`
-${contextBefore}
-\`\`\`
-
-**上下文（修改部分之后5行）**:
-\`\`\`
-${contextAfter}
-\`\`\`
-
-**用户要求**: ${query}`;
+            const localEditSystemInstruction = this.promptService.getLocalEditSystemInstruction(baseSystemPrompt);
+            const localEditUserMessage = this.promptService.getLocalEditUserMessage({
+                filePath,
+                startLine,
+                endLine,
+                originalContent,
+                contextBefore,
+                contextAfter,
+                query
+            });
 
             this.localEditStatusModal.updateStatus("正在生成修改...");
 
@@ -409,6 +391,41 @@ ${contextAfter}
 			providers: loadedData.providers || DEFAULT_SETTINGS.providers,
 			activeProviderId: loadedData.activeProviderId || DEFAULT_SETTINGS.activeProviderId
 		};
+	}
+
+	/**
+	 * Migrate settings from prompts.json if they are empty
+	 * This ensures backward compatibility and populates defaults from prompts.json
+	 */
+	async migrateSettingsFromPrompts() {
+		let needsSave = false;
+
+		// Migrate system prompt if empty
+		if (!this.settings.systemPrompt || this.settings.systemPrompt.trim() === '') {
+			console.log('[VoyaruPlugin] Migrating system prompt from prompts.json');
+			this.settings.systemPrompt = this.promptService.getSystemPrompt(false);
+			needsSave = true;
+		}
+
+		// Migrate tools if empty
+		if (!this.settings.tools || this.settings.tools.length === 0) {
+			console.log('[VoyaruPlugin] Migrating tools from prompts.json');
+			this.settings.tools = this.promptService.getDefaultTools();
+			needsSave = true;
+		}
+
+		// Migrate post-check items if empty
+		if (!this.settings.postCheckItems || this.settings.postCheckItems.length === 0) {
+			console.log('[VoyaruPlugin] Migrating post-check items from prompts.json');
+			this.settings.postCheckItems = this.promptService.getDefaultPostCheckItems();
+			needsSave = true;
+		}
+
+		if (needsSave) {
+			await this.saveSettings();
+			console.log('[VoyaruPlugin] Settings migration complete');
+			new Notice('提示词配置已从 prompts.json 加载');
+		}
 	}
 
 	async saveSettings() {

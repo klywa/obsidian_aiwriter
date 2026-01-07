@@ -2,16 +2,19 @@ import { GoogleGenAI, Content, Part, Tool, Type } from "@google/genai";
 import { FSService } from "./fs_service";
 import { VoyaruSettings, DEFAULT_SETTINGS, ProviderConfig } from "../settings";
 import { Notice } from "obsidian";
+import { PromptService } from "./prompt_service";
 
 export class AIService {
     private genAI: GoogleGenAI | null = null;
     private fs: FSService;
     private settings: VoyaruSettings;
     private activeChats: Map<string, any> = new Map();
+    private promptService: PromptService;
 
-    constructor(settings: VoyaruSettings, fs: FSService) {
+    constructor(settings: VoyaruSettings, fs: FSService, promptService: PromptService) {
         this.settings = settings;
         this.fs = fs;
+        this.promptService = promptService;
         this.initClient();
     }
 
@@ -108,18 +111,9 @@ export class AIService {
         
         // 根据引用模式添加额外说明
         if (this.settings.referenceMode === 'path') {
-            prompt += `\n\n### 📎 Referenced Files Handling
-When you see "📎 Referenced Files" in the user's message, those are file paths that the user wants you to consider.
-**Important**: The file contents are NOT included in the message. You MUST use the \`readFile\` tool to read each file before you can work with it.
-
-Example workflow:
-1. User mentions: "📎 Referenced Files: Chapters/第1回.md"
-2. You should: Call readFile("Chapters/第1回.md") to read the content
-3. Then: Process the content according to user's request
-
-Always read referenced files first before attempting to work with them.`;
+            prompt += this.promptService.getReferenceModeInstruction();
         }
-        
+
         return prompt;
     }
 
@@ -164,22 +158,13 @@ Always read referenced files first before attempting to work with them.`;
      */
     async getFullSystemPrompt(): Promise<string> {
         let prompt = this.getProcessedSystemPrompt();
-        
+
         // 查找风格指南文件路径
         const styleGuidePath = await this.findStyleGuidePath();
         if (styleGuidePath) {
-            prompt += `\n\n---\n\n### 📖 风格指南（必读）
-
-**重要**：本项目存在风格指南文件，位于 \`${styleGuidePath}\`。
-
-**强制要求**：在进行任何创作任务之前，你必须首先使用 \`readFile\` 工具读取风格指南的完整内容，并在创作过程中严格遵循其中的所有规范和要求。
-
-请立即执行：
-1. 调用 \`readFile("${styleGuidePath}")\` 读取风格指南
-2. 仔细理解并记住其中的风格要求
-3. 在后续创作中严格遵循这些要求`;
+            prompt += '\n\n' + this.promptService.getStyleGuideInstruction(styleGuidePath);
         }
-        
+
         return prompt;
     }
 
@@ -302,69 +287,18 @@ Always read referenced files first before attempting to work with them.`;
         // 构建后置检查的system prompt（包含风格指南）
         const baseSystemPrompt = await this.getFullSystemPrompt();
         const fileTree = await this.getProjectFileTree();
-        
-        // 构建检查项列表
-        const checkItemsList = this.settings.postCheckItems
-            .map((item, index) => `${index + 1}. ${item.checkPrompt}`)
-            .join('\n\n');
 
-        const postCheckSystemPrompt = `${baseSystemPrompt}
+        // 使用 PromptService 获取后置检查提示词
+        const postCheckSystemPrompt = this.promptService.getPostCheckSystemPrompt(
+            baseSystemPrompt,
+            fileTree || '',
+            this.settings.postCheckItems
+        );
 
-${fileTree ? `### Project File Tree (Always Available)\n\`\`\`\n${fileTree}\n\`\`\`\n\n` : ''}
-
----
-
-## 后置检查与润色任务
-
-你现在需要对刚刚创作的内容进行后置检查和润色。
-
-### 检查项列表
-${checkItemsList}
-
-### 工作流程
-
-**第一步：分析检查**
-仔细阅读内容，对照每一条检查项进行逐项检查。你需要：
-1. 明确指出哪些地方不符合检查项的要求
-2. 说明具体的问题是什么
-3. 计划如何修改以满足要求
-
-**第二步：修改润色**
-在完成检查分析后，输出修改润色后的完整内容。要求：
-1. 修改所有不符合检查项要求的内容
-2. 保持字数不减少（可以适当增加）
-3. 不删改其他符合要求的内容
-4. 保持整体连贯性和流畅性
-
-### 输出格式
-
-请按照以下格式输出：
-
-**【检查结果】**
-（在这里输出你的检查分析结果，说明哪些地方不符合要求，准备如何修改）
-
-**【润色后内容】**
-（在这里直接输出修改润色后的完整内容）
-
-**极其重要的格式要求：**
-- 【润色后内容】部分必须直接输出原始的markdown文本
-- 绝对不要使用 \`\`\`markdown 或 \`\`\` 或任何形式的代码块包裹内容
-- 不要添加任何额外的格式标记或包装
-- 直接输出文章的markdown内容即可，就像你在编辑一个.md文件一样
-- 如果原文是 "# 标题\n\n正文"，你就直接输出 "# 标题\n\n正文"，不要有任何额外包装
-- 润色后的内容必须是完整的，不能遗漏任何段落或内容
-`;
-
-        const postCheckMessage = `请对以下内容进行后置检查和润色：
-
-**文件路径**: ${filePath}
-
-**原始内容**:
-${originalContent}
-
-请按照system prompt中的要求，进行检查分析并输出润色后的内容。
-
-⚠️ 特别提醒：在【润色后内容】部分，直接输出markdown文本，不要使用 \`\`\`markdown 或 \`\`\` 包裹！这会导致内容损坏！`;
+        const postCheckMessage = this.promptService.getPostCheckUserMessage(
+            filePath,
+            originalContent
+        );
 
         // 创建临时会话进行后置检查
         const tempSessionId = `postcheck-${Date.now()}`;
@@ -592,46 +526,12 @@ ${originalContent}
         }
         
         // Prepare tools (using new SDK Tool format)
-         const tools: Tool[] = [
-             {
-               functionDeclarations: [
-                 {
-                   name: "writeFile",
-                   description: "Create or overwrite a file with content. Use this to save chapters, outlines, characters, etc.",
-                   parameters: {
-                     type: Type.OBJECT,
-                     properties: {
-                       path: { type: Type.STRING, description: "The path to the file. (e.g., 'Chapters/第1回.md')" },
-                       content: { type: Type.STRING, description: "The full content to write to the file." },
-                     },
-                     required: ["path", "content"],
-                   },
-                 },
-                 {
-                   name: "readFile",
-                   description: "Read the content of a file to get context.",
-                   parameters: {
-                     type: Type.OBJECT,
-                     properties: {
-                       path: { type: Type.STRING, description: "The path to the file." },
-                     },
-                     required: ["path"],
-                   },
-                 },
-                  {
-                   name: "deleteFile",
-                   description: "Delete a file.",
-                   parameters: {
-                     type: Type.OBJECT,
-                     properties: {
-                       path: { type: Type.STRING, description: "The path to the file." },
-                     },
-                     required: ["path"],
-                   },
-                 }
-               ],
-             },
-           ];
+        // Load function declarations from PromptService
+        const tools: Tool[] = [
+            {
+                functionDeclarations: this.promptService.getAllToolDefinitions()
+            },
+        ];
            
         let chat;
 

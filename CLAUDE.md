@@ -65,6 +65,12 @@ The codebase follows a clear separation of concerns across four layers:
      - CRUD operations on vault files
      - Folder traversal and file listing
      - Path normalization for vault-relative operations
+   - **PromptService** (`prompt_service.ts`, ~300 lines): Centralized prompt management
+     - Loads and parses prompts.json configuration
+     - Provides type-safe getter methods for all prompts
+     - Handles template variable substitution (e.g., `${filePath}`)
+     - Supports i18n structure (zh/en) with fallback
+     - Manages system prompts, tool definitions, post-check, and local edit prompts
 
 3. **UI Layer** (`src/views/`, `src/components/`)
    - **ChatView** (`chat_view.ts`): Obsidian ItemView wrapper
@@ -197,6 +203,84 @@ Every AI chat request includes a visual file tree:
 - Organized by folder type
 - Helps AI understand project structure and available resources
 
+## Prompt Management System
+
+### Overview
+
+All AI prompts are centrally managed in `prompts.json` at the plugin root. This provides:
+
+- **Single source of truth**: All prompts in one file, easy to find and edit
+- **Version control**: Track prompt changes over time
+- **Internationalization ready**: Supports zh/en structure (currently zh only)
+- **Template support**: Variable substitution for dynamic prompts
+- **Type safety**: Validated structure loaded via PromptService
+
+### prompts.json Structure
+
+```json
+{
+  "version": "1.0.0",
+  "system": {
+    "base": { "zh": "...", "en": null },
+    "jailbreak": { "zh": "...", "en": null, "optional": true, "warning": "..." },
+    "styleGuideInstruction": { "zh": "...", "template": true, "variables": ["styleGuidePath"] },
+    "referenceModeInstruction": { "zh": "..." }
+  },
+  "tools": {
+    "default": [...],
+    "functionDefinitions": { "writeFile": {...}, "readFile": {...}, "deleteFile": {...} }
+  },
+  "postCheck": {
+    "systemPrompt": { "zh": "...", "template": true, "variables": [...] },
+    "userMessage": { "zh": "...", "template": true, "variables": [...] },
+    "defaultItems": [...]
+  },
+  "localEdit": {
+    "systemInstruction": { "zh": "...", "template": true },
+    "userMessage": { "zh": "...", "template": true }
+  }
+}
+```
+
+### PromptService API
+
+The `PromptService` class provides type-safe access to all prompts:
+
+```typescript
+// System prompts
+promptService.getSystemPrompt(includeJailbreak?: boolean): string
+promptService.getStyleGuideInstruction(styleGuidePath: string): string
+promptService.getReferenceModeInstruction(): string
+
+// Tools
+promptService.getDefaultTools(): AgentTool[]
+promptService.getToolDefinition(toolName: string): FunctionDeclaration
+promptService.getAllToolDefinitions(): FunctionDeclaration[]
+
+// Post-check
+promptService.getPostCheckSystemPrompt(basePrompt, fileTree, checkItems): string
+promptService.getPostCheckUserMessage(filePath, originalContent): string
+promptService.getDefaultPostCheckItems(): PostCheckItem[]
+
+// Local edit
+promptService.getLocalEditSystemInstruction(basePrompt): string
+promptService.getLocalEditUserMessage(params: LocalEditParams): string
+```
+
+### Customizing Prompts
+
+1. **Edit prompts.json**: Modify prompts directly in the file
+2. **Reload plugin**: Changes take effect on next plugin load
+3. **Templates**: Use `${variableName}` syntax for dynamic content
+4. **Optional content**: Set `"optional": true` to make prompts togglable
+5. **Migration**: User customizations in settings are preserved on first load
+
+### Important Notes
+
+- **Jailbreak content**: The `system.jailbreak` section contains content designed to bypass safety guidelines. It's marked as optional and should be reviewed carefully.
+- **Settings migration**: On first load after updating, the plugin automatically populates `systemPrompt`, `tools`, and `postCheckItems` from prompts.json if they're empty.
+- **Language fallback**: Currently uses Chinese (zh) with null English placeholders. Falls back to zh if en is not available.
+
 ## Important Settings and Configuration
 
 ### VoyaruSettings Interface
@@ -272,12 +356,25 @@ Models are defined in `MODELS` constant in `settings.ts`.
 4. Update `AIService.updateSettings()` if setting affects AI behavior
 5. Consider adding migration logic if changing existing settings structure
 
+### When Modifying Prompts
+
+1. **For prompt content changes**: Edit `prompts.json` directly
+2. **For new prompt types**:
+   - Add to `prompts.json` structure
+   - Update `PromptsConfig` interface in `prompt_service.ts`
+   - Add getter method in `PromptService` class
+   - Update calling code to use new prompt
+3. **For template variables**: Use `${variableName}` syntax in prompt text
+4. **Testing**: Reload plugin to see changes (no rebuild needed for prompt-only changes)
+
 ## Key File Paths Reference
 
 - **Plugin Entry**: [src/main.ts](src/main.ts) - Plugin lifecycle and command registration
 - **AI Service**: [src/services/ai_service.ts](src/services/ai_service.ts) - Gemini API integration (~1100 lines)
+- **Prompt Service**: [src/services/prompt_service.ts](src/services/prompt_service.ts) - Centralized prompt management (~300 lines)
+- **Prompts Config**: [prompts.json](prompts.json) - All AI prompts in one file (~500 lines)
 - **Chat UI**: [src/views/ChatComponent.tsx](src/views/ChatComponent.tsx) - Main React interface (2832 lines)
-- **Settings**: [src/settings.ts](src/settings.ts) - Settings interface and UI (387 lines)
+- **Settings**: [src/settings.ts](src/settings.ts) - Settings interface and UI
 - **File System**: [src/services/fs_service.ts](src/services/fs_service.ts) - Vault file operations
 - **Build Config**: [esbuild.config.mjs](esbuild.config.mjs) - Build configuration
 - **Manifest**: [manifest.json](manifest.json) - Plugin metadata
