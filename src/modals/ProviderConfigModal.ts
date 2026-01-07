@@ -83,7 +83,7 @@ export class ProviderConfigModal extends Modal {
                     .onChange(value => {
                         this.config.apiKey = value;
                     });
-                text.inputEl.type = 'password';
+                text.inputEl.type = 'text';
             });
 
         // Base URL（可选）

@@ -452,24 +452,26 @@ export class AIService {
 
     async *streamChat(sessionId: string, history: Content[], newMessage: string, referencedFiles: string[] = [], abortSignal?: AbortSignal, systemInstructionOverride?: string): AsyncGenerator<any, void, unknown> {
         try {
-        // 检查API Key
-        const trimmedKey = this.settings.apiKey?.trim();
-        if (!trimmedKey || trimmedKey.length === 0) {
-            new Notice("请先在设置中配置 API Key。");
-            yield { type: "error", content: "API Key 未设置。请前往 设置 → Voyaru Agent 配置 API Key。" };
+        // 检查API Key（使用provider而不是旧的settings.apiKey）
+        const provider = this.getActiveProvider();
+        const trimmedKey = provider?.apiKey?.trim();
+
+        if (!provider || !trimmedKey || trimmedKey.length === 0) {
+            new Notice("请先在设置中配置提供商和 API Key。");
+            yield { type: "error", content: "API Key 未设置。请前往 设置 → Voyaru Agent → 提供商管理 配置 API Key。" };
             return;
         }
-        
+
         // 如果genAI未初始化，重新初始化
         if (!this.genAI) {
-            console.log('Reinitializing AI client with API Key');
+            console.log('[AIService] Reinitializing AI client with provider:', provider.name);
             this.initClient();
         }
-        
+
         // 再次检查（初始化后）
         if (!this.genAI) {
-            new Notice("API Key 无效，请检查设置。");
-            yield { type: "error", content: `API Key 无效。当前 API Key: ${trimmedKey ? '***' + trimmedKey.slice(-4) : '空'}。请检查 API Key 是否正确。` };
+            new Notice("API Key 无效或提供商配置错误，请检查设置。");
+            yield { type: "error", content: `初始化失败。提供商: ${provider.name}，API Key: ${trimmedKey ? '***' + trimmedKey.slice(-4) : '空'}。请检查配置是否正确。` };
             return;
         }
 
