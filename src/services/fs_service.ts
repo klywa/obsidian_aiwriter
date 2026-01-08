@@ -56,10 +56,118 @@ export class FSService {
         const file = this.app.vault.getAbstractFileByPath(normalized);
         if (file) {
              // Move to system trash
-             await this.app.vault.trash(file, true); 
+             await this.app.vault.trash(file, true);
         }
     }
-    
+
+    /**
+     * Edit file with line-based operations
+     * @param path - File path
+     * @param operation - Edit operation type
+     * @param startLine - Starting line number (1-based, optional for append)
+     * @param endLine - Ending line number (1-based, inclusive, optional for insert/append)
+     * @param content - New content (optional for delete)
+     * @returns Previous content for undo capability
+     */
+    async editFile(
+        path: string,
+        operation: 'replace' | 'insert' | 'delete' | 'append',
+        startLine?: number,
+        endLine?: number,
+        content?: string
+    ): Promise<string | null> {
+        const normalized = normalizePath(path);
+        const file = this.app.vault.getAbstractFileByPath(normalized);
+
+        if (!(file instanceof TFile)) {
+            throw new Error(`File ${path} not found. Use writeFile to create new files.`);
+        }
+
+        // Read current content
+        const fullContent = await this.app.vault.read(file);
+        const lines = fullContent.split('\n');
+
+        // Validate line numbers (convert to 0-based for internal use)
+        let startIdx: number | undefined;
+        let endIdx: number | undefined;
+
+        if (startLine !== undefined) {
+            startIdx = startLine - 1; // Convert to 0-based
+            if (startIdx < 0 || startIdx >= lines.length) {
+                throw new Error(
+                    `Invalid startLine: ${startLine}. File only has ${lines.length} lines. ` +
+                    `Try readFile first to see current line count.`
+                );
+            }
+        }
+
+        if (endLine !== undefined) {
+            endIdx = endLine - 1; // Convert to 0-based
+            if (endIdx < 0 || endIdx >= lines.length || (startIdx !== undefined && endIdx < startIdx)) {
+                throw new Error(
+                    `Invalid endLine: ${endLine}. Must be between ${startLine || 1} and ${lines.length}.`
+                );
+            }
+        }
+
+        // Perform operation
+        let newLines: string[];
+
+        switch (operation) {
+            case 'replace':
+                if (startIdx === undefined || endIdx === undefined || content === undefined) {
+                    throw new Error('replace operation requires startLine, endLine, and content');
+                }
+                newLines = [
+                    ...lines.slice(0, startIdx),
+                    ...content.split('\n'),
+                    ...lines.slice(endIdx + 1)
+                ];
+                break;
+
+            case 'insert':
+                if (startIdx === undefined || content === undefined) {
+                    throw new Error('insert operation requires startLine and content');
+                }
+                newLines = [
+                    ...lines.slice(0, startIdx + 1),
+                    ...content.split('\n'),
+                    ...lines.slice(startIdx + 1)
+                ];
+                break;
+
+            case 'delete':
+                if (startIdx === undefined || endIdx === undefined) {
+                    throw new Error('delete operation requires startLine and endLine');
+                }
+                newLines = [
+                    ...lines.slice(0, startIdx),
+                    ...lines.slice(endIdx + 1)
+                ];
+                break;
+
+            case 'append':
+                if (content === undefined) {
+                    throw new Error('append operation requires content');
+                }
+                newLines = [
+                    ...lines,
+                    ...content.split('\n')
+                ];
+                break;
+
+            default:
+                throw new Error(`Unknown operation: ${operation}`);
+        }
+
+        // Write modified content
+        const newContent = newLines.join('\n');
+        await this.app.vault.modify(file, newContent);
+
+        // Return previous content for undo
+        return fullContent;
+    }
+
     getFiles(folderPath: string): TFile[] {
          const folder = this.app.vault.getAbstractFileByPath(normalizePath(folderPath));
          if (folder instanceof TFolder) {

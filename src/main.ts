@@ -399,10 +399,27 @@ export default class VoyaruPlugin extends Plugin {
 	async migrateSettingsFromPrompts() {
 		let needsSave = false;
 
-		// Migrate system prompt if empty
-		if (!this.settings.systemPrompt || this.settings.systemPrompt.trim() === '') {
-			console.log('[VoyaruPlugin] Migrating system prompt from prompts.json');
-			this.settings.systemPrompt = this.promptService.getSystemPrompt(false);
+		// 迁移旧的 systemPrompt 到 customPrompt (分层架构)
+		if (this.settings.systemPrompt && this.settings.systemPrompt.trim() !== '') {
+			console.log('[VoyaruPlugin] Migrating old systemPrompt to customPrompt');
+
+			// 检查是否是默认提示词 (与 prompts.json 一致)
+			const defaultPrompt = this.promptService.getSystemPrompt(false);
+
+			if (this.settings.systemPrompt === defaultPrompt) {
+				// 如果用户使用的是默认提示词,不需要迁移到 customPrompt
+				this.settings.customPrompt = '';
+				console.log('[VoyaruPlugin] User was using default prompt, no custom content to migrate');
+			} else {
+				// 用户有自定义内容,迁移到 customPrompt
+				// 尝试提取用户自定义部分 (移除默认核心指令)
+				const customPart = this.extractCustomPrompt(this.settings.systemPrompt, defaultPrompt);
+				this.settings.customPrompt = customPart;
+				console.log('[VoyaruPlugin] Migrated custom prompt content');
+			}
+
+			// 清空旧字段 (标记为已迁移)
+			this.settings.systemPrompt = '';
 			needsSave = true;
 		}
 
@@ -423,8 +440,23 @@ export default class VoyaruPlugin extends Plugin {
 		if (needsSave) {
 			await this.saveSettings();
 			console.log('[VoyaruPlugin] Settings migration complete');
-			new Notice('提示词配置已从 prompts.json 加载');
+			new Notice('设置已迁移到新的分层提示词架构');
 		}
+	}
+
+	/**
+	 * 从旧的 systemPrompt 中提取用户自定义部分
+	 * 简单实现: 如果内容不匹配默认值,则全部视为自定义
+	 */
+	private extractCustomPrompt(oldPrompt: string, defaultPrompt: string): string {
+		// 如果完全匹配默认值,返回空
+		if (oldPrompt === defaultPrompt) {
+			return '';
+		}
+
+		// 简单策略: 如果不匹配,保留整个旧提示词作为自定义部分
+		// 未来可以实现更智能的 diff 算法
+		return oldPrompt;
 	}
 
 	async saveSettings() {

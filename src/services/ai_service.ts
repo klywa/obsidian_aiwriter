@@ -93,29 +93,40 @@ export class AIService {
         }
     }
 
+    /**
+     * 获取处理后的系统提示词 (分层架构)
+     * 组成: 核心系统指令 (不可编辑) + 用户自定义部分 (可编辑)
+     */
     getProcessedSystemPrompt(): string {
-        let prompt = this.settings.systemPrompt;
-        if (!prompt || prompt.trim().length === 0) {
-            // If user hasn't configured a system prompt, use the default from PromptService
-            prompt = this.promptService.getSystemPrompt(false);
-        }
+        // 第一部分: 核心系统指令 (始终从 prompts.json 加载,确保工具指导不丢失)
+        let coreInstructions = this.promptService.getSystemPrompt(false);
 
+        // 应用文件夹占位符替换
         const folders = this.settings.folders;
-
         if (folders) {
-            prompt = prompt.replace(/\{chapters\}/g, folders.chapters || "Chapters");
-            prompt = prompt.replace(/\{characters\}/g, folders.characters || "Characters");
-            prompt = prompt.replace(/\{outlines\}/g, folders.outlines || "Outlines");
-            prompt = prompt.replace(/\{notes\}/g, folders.notes || "Notes");
-            prompt = prompt.replace(/\{knowledge\}/g, folders.knowledge || "Knowledge");
+            coreInstructions = coreInstructions.replace(/\{chapters\}/g, folders.chapters || "Chapters");
+            coreInstructions = coreInstructions.replace(/\{characters\}/g, folders.characters || "Characters");
+            coreInstructions = coreInstructions.replace(/\{outlines\}/g, folders.outlines || "Outlines");
+            coreInstructions = coreInstructions.replace(/\{notes\}/g, folders.notes || "Notes");
+            coreInstructions = coreInstructions.replace(/\{knowledge\}/g, folders.knowledge || "Knowledge");
         }
+
+        // 第二部分: 用户自定义部分
+        let customPart = this.settings.customPrompt || '';
+        if (customPart.trim().length > 0) {
+            // 添加分隔符,清晰标识用户自定义内容
+            customPart = '\n\n---\n\n### 用户自定义规则\n\n' + customPart;
+        }
+
+        // 组合最终提示词
+        let finalPrompt = coreInstructions + customPart;
 
         // 根据引用模式添加额外说明
         if (this.settings.referenceMode === 'path') {
-            prompt += this.promptService.getReferenceModeInstruction();
+            finalPrompt += this.promptService.getReferenceModeInstruction();
         }
 
-        return prompt;
+        return finalPrompt;
     }
 
     /**
@@ -530,9 +541,16 @@ export class AIService {
         
         // Prepare tools (using new SDK Tool format)
         // Load function declarations from PromptService
+        const functionDeclarations = this.promptService.getAllToolDefinitions();
+
+        // Filter out editFile if disabled in settings
+        const filteredDeclarations = this.settings.enableEditFileTool
+            ? functionDeclarations
+            : functionDeclarations.filter(fd => fd.name !== 'editFile');
+
         const tools: Tool[] = [
             {
-                functionDeclarations: this.promptService.getAllToolDefinitions()
+                functionDeclarations: filteredDeclarations
             },
         ];
            
@@ -820,6 +838,128 @@ export class AIService {
                         } else if (name === "deleteFile") {
                             await this.fs.deleteFile(toolArgs.path);
                             output = `File ${toolArgs.path} deleted successfully.`;
+                        } else if (name === "editFile") {
+                            // Check if editFile is enabled in settings
+                            if (!this.settings.enableEditFileTool) {
+                                output = "Error: editFile tool is disabled in settings. Please use writeFile instead or enable editFile in settings.";
+                                yield { type: "tool_result", tool: name, result: output, args: toolArgs };
+                                functionResponses.push({
+                                    functionResponse: {
+                                        name: name,
+                                        response: { result: output }
+                                    }
+                                });
+                                continue;
+                            }
+
+                            // Validate operation parameter
+                            const operation = toolArgs.operation;
+                            const validOps = ['replace', 'insert', 'delete', 'append'];
+
+                            if (!validOps.includes(operation)) {
+                                output = `Error: Invalid operation "${operation}". Must be one of: ${validOps.join(', ')}`;
+                                yield { type: "tool_result", tool: name, result: output, args: toolArgs };
+                                functionResponses.push({
+                                    functionResponse: {
+                                        name: name,
+                                        response: { result: output }
+                                    }
+                                });
+                                continue;
+                            }
+
+                            try {
+                                // Perform edit operation
+                                const previousContent = await this.fs.editFile(
+                                    toolArgs.path,
+                                    operation,
+                                    toolArgs.startLine,
+                                    toolArgs.endLine,
+                                    toolArgs.content
+                                );
+
+                                // Build success message with operation details
+                                let operationDesc = '';
+                                switch (operation) {
+                                    case 'replace':
+                                        operationDesc = `Replaced lines ${toolArgs.startLine}-${toolArgs.endLine}`;
+                                        break;
+                                    case 'insert':
+                                        operationDesc = `Inserted content after line ${toolArgs.startLine}`;
+                                        break;
+                                    case 'delete':
+                                        operationDesc = `Deleted lines ${toolArgs.startLine}-${toolArgs.endLine}`;
+                                        break;
+                                    case 'append':
+                                        operationDesc = `Appended content to end of file`;
+                                        break;
+                                }
+
+                                output = `File ${toolArgs.path} edited successfully. ${operationDesc}`;
+                                undoData = {
+                                    previousContent: previousContent,
+                                    path: toolArgs.path
+                                };
+
+                                // Yield result with undo data
+                                yield { type: "tool_result", tool: name, result: output, args: toolArgs, undoData: undoData };
+
+                                // Post-check logic: Only trigger for replace/append operations on chapter files
+                                const isChapterFile = this.isChapterFile(toolArgs.path);
+                                const shouldPostCheck = (operation === 'replace' || operation === 'append');
+
+                                if (isChapterFile && shouldPostCheck && this.settings.enablePostCheck &&
+                                    this.settings.postCheckItems && this.settings.postCheckItems.length > 0) {
+
+                                    // Read updated file content for post-check
+                                    const updatedContent = await this.fs.readFile(toolArgs.path);
+
+                                    yield { type: "thinking", content: "正在进行后置检查..." };
+
+                                    try {
+                                        const { checkResult, refinedContent } = await this.performPostCheckAndRefine(
+                                            toolArgs.path,
+                                            updatedContent,
+                                            abortSignal
+                                        );
+
+                                        if (checkResult) {
+                                            yield { type: "thinking", content: `后置检查结果:\n\n${checkResult}` };
+                                        }
+
+                                        if (refinedContent && refinedContent !== updatedContent) {
+                                            // Apply refined content (full rewrite after check)
+                                            await this.fs.writeFile(toolArgs.path, refinedContent);
+
+                                            yield {
+                                                type: "tool_result",
+                                                tool: "writeFile",
+                                                result: `File ${toolArgs.path} refined after post-check`,
+                                                args: { path: toolArgs.path, content: refinedContent },
+                                                undoData: { previousContent: updatedContent, path: toolArgs.path }
+                                            };
+
+                                            yield { type: "thinking", content: "后置检查和润色已完成" };
+                                        } else {
+                                            yield { type: "thinking", content: "后置检查完成,内容符合要求" };
+                                        }
+                                    } catch (refineError: any) {
+                                        console.error("Post-check refinement error:", refineError);
+                                        yield { type: "thinking", content: `后置检查出错: ${refineError.message}` };
+                                    }
+                                }
+
+                                functionResponses.push({
+                                    functionResponse: {
+                                        name: name,
+                                        response: { result: output }
+                                    }
+                                });
+                                continue;
+
+                            } catch (e: any) {
+                                output = `Error executing editFile: ${e.message}`;
+                            }
                         } else {
                             output = "Unknown tool.";
                         }

@@ -76,7 +76,10 @@ export interface VoyaruSettings {
     // 新增：多提供商配置
     providers?: ProviderConfig[];   // 所有配置的提供商
     activeProviderId?: string;      // 当前激活的提供商ID
+
+    /** @deprecated Use customPrompt instead. Will be migrated automatically. */
     systemPrompt: string;
+    customPrompt: string;           // 用户自定义提示词部分
     folders: {
         chapters: string;
         characters: string;
@@ -87,6 +90,7 @@ export interface VoyaruSettings {
     tools: AgentTool[];
     postCheckItems: PostCheckItem[];
     enablePostCheck: boolean;
+    enableEditFileTool: boolean;    // 启用 editFile 工具
     sessions: Session[];
     lastSessionId: string | null;
     fontSize: number;
@@ -126,11 +130,13 @@ export const DEFAULT_SETTINGS: VoyaruSettings = {
     activeProviderId: 'default-gemini',
 
     enablePostCheck: true,
+    enableEditFileTool: true,
     queryHistory: [],
     sendWithShiftEnter: false,
     // System prompt is now loaded from prompts.json via PromptService
     // Will be populated during plugin initialization if empty
-    systemPrompt: '',
+    systemPrompt: '',  // 废弃,保留用于迁移检测
+    customPrompt: '',  // 用户自定义提示词,默认为空
     folders: {
         chapters: "Chapters",
         characters: "Characters",
@@ -279,21 +285,38 @@ export class VoyaruSettingTab extends PluginSettingTab {
             });
         
         new Setting(containerEl)
-            .setName('System Prompt')
-            .setDesc('The core instructions for the AI Agent.')
+            .setName('核心系统指令 (只读)')
+            .setDesc('查看插件内置的核心指令，包含所有工具使用指导等。此部分不可编辑，确保 AI 始终正确使用工具。')
             .addButton(button => button
-                .setButtonText('Edit System Prompt')
+                .setButtonText('查看核心指令')
+                .onClick(() => {
+                    const corePrompt = this.plugin.promptService.getSystemPrompt(false);
+                    new SystemPromptModal(
+                        this.app,
+                        corePrompt,
+                        async () => {
+                            // 只读，不保存
+                        },
+                        true  // readOnly = true
+                    ).open();
+                }));
+
+        new Setting(containerEl)
+            .setName('自定义提示词')
+            .setDesc('添加个性化指令，如语气风格、创作偏好等。核心工具使用指导由插件自动管理，无需手动配置。')
+            .addButton(button => button
+                .setButtonText('编辑自定义提示词')
                 .onClick(() => {
                     new SystemPromptModal(
                         this.app,
-                        this.plugin.settings.systemPrompt,
+                        this.plugin.settings.customPrompt,
                         async (newPrompt) => {
-                            this.plugin.settings.systemPrompt = newPrompt;
+                            this.plugin.settings.customPrompt = newPrompt;
                             await this.plugin.saveSettings();
                         }
                     ).open();
                 }));
-        
+
         new Setting(containerEl)
             .setName('Manage Tools')
             .setDesc('Add, edit, or remove custom tools for your AI agent.')
@@ -311,6 +334,16 @@ export class VoyaruSettingTab extends PluginSettingTab {
                 }));
         
         new Setting(containerEl)
+            .setName('启用 editFile 工具')
+            .setDesc('使用基于行号的部分编辑功能，可大幅减少 token 消耗（推荐开启）')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableEditFileTool)
+                .onChange(async (value) => {
+                    this.plugin.settings.enableEditFileTool = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
             .setName('启用后置检查')
             .setDesc('开启后，AI完成写作后会自动进行内容检查和润色。')
             .addToggle(toggle => toggle
@@ -319,7 +352,7 @@ export class VoyaruSettingTab extends PluginSettingTab {
                     this.plugin.settings.enablePostCheck = value;
                     await this.plugin.saveSettings();
                 }));
-        
+
         new Setting(containerEl)
             .setName('管理后置检查项')
             .setDesc('配置写作完成后的自动检查和润色规则。')
