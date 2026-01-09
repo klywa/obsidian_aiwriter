@@ -699,6 +699,27 @@ export class AIService {
             let fullText = "";
             let hasReceivedText = false;
             let functionCalls: any[] = [];
+
+            // Helper to create tool result with status tracking
+            const createToolResult = (tool: string, result: any, args: any, undoData?: any, status: 'completed' | 'failed' = 'completed') => {
+                const now = Date.now();
+                return {
+                    role: 'model' as const,
+                    type: "tool_result" as const,
+                    tool,
+                    content: `${tool} completed`,
+                    toolData: {
+                        result,
+                        args,
+                        undoData
+                    },
+                    id: `tool-${tool}-${now}`,
+                    status,
+                    startTime: now,
+                    endTime: now,
+                    expanded: false
+                };
+            };
             
             try {
                 for await (const chunk of stream) {
@@ -773,7 +794,7 @@ export class AIService {
                             
                             // 立即yield第一次writeFile的结果（中间版本）
                             const updatedArgs = { ...toolArgs, path: targetPath };
-                            yield { type: "tool_result", tool: name, result: output, args: updatedArgs, undoData: undoData };
+                            yield createToolResult(name, output, updatedArgs, undoData);
                             
                             // 检查是否是章节文件，如果是则触发后置检查和润色
                             const isChapterFile = this.isChapterFile(targetPath);
@@ -796,15 +817,9 @@ export class AIService {
                                         // 应用润色后的内容
                                         await this.fs.writeFile(targetPath, refinedContent);
                                         const refinedOutput = `File ${targetPath} refined and updated.`;
-                                        
+
                                         // yield第二次writeFile的结果（润色后版本）
-                                        yield { 
-                                            type: "tool_result", 
-                                            tool: "writeFile", 
-                                            result: refinedOutput, 
-                                            args: { path: targetPath, content: refinedContent }, 
-                                            undoData: { previousContent: toolArgs.content, path: targetPath }
-                                        };
+                                        yield createToolResult("writeFile", refinedOutput, { path: targetPath, content: refinedContent }, { previousContent: toolArgs.content, path: targetPath });
                                         
                                         yield { type: "thinking", content: "后置检查和润色已完成" };
                                         
@@ -842,7 +857,7 @@ export class AIService {
                             // Check if editFile is enabled in settings
                             if (!this.settings.enableEditFileTool) {
                                 output = "Error: editFile tool is disabled in settings. Please use writeFile instead or enable editFile in settings.";
-                                yield { type: "tool_result", tool: name, result: output, args: toolArgs };
+                                yield createToolResult(name, output, toolArgs);
                                 functionResponses.push({
                                     functionResponse: {
                                         name: name,
@@ -858,7 +873,7 @@ export class AIService {
 
                             if (!validOps.includes(operation)) {
                                 output = `Error: Invalid operation "${operation}". Must be one of: ${validOps.join(', ')}`;
-                                yield { type: "tool_result", tool: name, result: output, args: toolArgs };
+                                yield createToolResult(name, output, toolArgs);
                                 functionResponses.push({
                                     functionResponse: {
                                         name: name,
@@ -902,7 +917,7 @@ export class AIService {
                                 };
 
                                 // Yield result with undo data
-                                yield { type: "tool_result", tool: name, result: output, args: toolArgs, undoData: undoData };
+                                yield createToolResult(name, output, toolArgs, undoData);
 
                                 // Post-check logic: Only trigger for replace/append operations on chapter files
                                 const isChapterFile = this.isChapterFile(toolArgs.path);
@@ -931,13 +946,7 @@ export class AIService {
                                             // Apply refined content (full rewrite after check)
                                             await this.fs.writeFile(toolArgs.path, refinedContent);
 
-                                            yield {
-                                                type: "tool_result",
-                                                tool: "writeFile",
-                                                result: `File ${toolArgs.path} refined after post-check`,
-                                                args: { path: toolArgs.path, content: refinedContent },
-                                                undoData: { previousContent: updatedContent, path: toolArgs.path }
-                                            };
+                                            yield createToolResult("writeFile", `File ${toolArgs.path} refined after post-check`, { path: toolArgs.path, content: refinedContent }, { previousContent: updatedContent, path: toolArgs.path });
 
                                             yield { type: "thinking", content: "后置检查和润色已完成" };
                                         } else {
@@ -967,7 +976,7 @@ export class AIService {
                          output = `Error executing ${name}: ${e.message}`;
                      }
                      
-                     yield { type: "tool_result", tool: name, result: output, args: toolArgs, undoData: undoData };
+                     yield createToolResult(name, output, toolArgs, undoData);
                      
                      functionResponses.push({
                          functionResponse: {

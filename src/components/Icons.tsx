@@ -171,3 +171,50 @@ export const ClockIcon = ({ size = 16, style, className }: IconProps) => (
         <polyline points="12 6 12 12 16 14"></polyline>
     </svg>
 );
+
+// Status icons for tool calls
+export const LoadingSpinner = ({ size = 16, style, className }: IconProps) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style} className={`voyaru-spinning ${className || ''}`}>
+        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" fill="none" strokeDasharray="32" strokeDashoffset="32" strokeLinecap="round" />
+    </svg>
+);
+
+export const PendingIcon = ({ size = 16, style, className }: IconProps) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
+        <path d="M5 22h14" />
+        <path d="M5 2h14" />
+        <path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22" />
+        <path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2" />
+    </svg>
+);
+
+export const ErrorIcon = ({ size = 16, style, className }: IconProps) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
+        <circle cx="12" cy="12" r="10" />
+        <line x1="12" y1="8" x2="12" y2="12" />
+        <line x1="12" y1="16" x2="12.01" y2="16" />
+    </svg>
+);
+
+// Tool-specific icons
+export const FileReadIcon = ({ size = 16, style, className }: IconProps) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
+        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+    </svg>
+);
+
+export const FileWriteIcon = ({ size = 16, style, className }: IconProps) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
+        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+    </svg>
+);
+
+export const FileEditIcon = ({ size = 16, style, className }: IconProps) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
+        <path d="M7 18H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10" />
+        <path d="M16.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 7.5-7.5z" />
+        <path d="M16 22l-4-1" />
+    </svg>
+);

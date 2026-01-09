@@ -20,6 +20,8 @@ export interface PostCheckItem {
     checkPrompt: string;
 }
 
+export type MessageStatus = 'pending' | 'running' | 'completed' | 'failed';
+
 export interface Message {
     role: 'user' | 'model' | 'system' | 'error';
     content: string;
@@ -40,6 +42,11 @@ export interface Message {
     };
     id?: string;
     referencedFiles?: string[];
+    // Tool call status tracking for Claude Code-style display
+    status?: MessageStatus;
+    startTime?: number;
+    endTime?: number;
+    expanded?: boolean;
 }
 
 export interface Session {

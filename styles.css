@@ -1938,3 +1938,172 @@ available in the app when your plugin is enabled.
         font-size: 14px;
     }
 }
+
+/* ===== TOOL CALL ITEMS (Claude Code-style) ===== */
+
+/* Main container */
+.voyaru-tool-call-item {
+    margin-bottom: 8px;
+    border-radius: 8px;
+    border: 1px solid var(--background-modifier-border);
+    background-color: var(--background-secondary);
+    overflow: hidden;
+    transition: all 0.2s ease;
+}
+
+.voyaru-tool-call-item:hover {
+    border-color: var(--background-modifier-hover);
+}
+
+/* Header (always visible) */
+.voyaru-tool-call-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.15s ease;
+}
+
+.voyaru-tool-call-header:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+/* Status indicator with animation */
+.voyaru-tool-status {
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.voyaru-tool-status.pending {
+    color: var(--text-muted);
+}
+
+.voyaru-tool-status.running {
+    color: var(--interactive-accent);
+    animation: voyaru-pulse 1.5s ease-in-out infinite;
+}
+
+.voyaru-tool-status.completed {
+    color: var(--text-success);
+}
+
+.voyaru-tool-status.failed {
+    color: var(--text-error);
+}
+
+/* Tool icon */
+.voyaru-tool-icon {
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: color 0.2s ease;
+}
+
+/* Description text */
+.voyaru-tool-description {
+    flex: 1;
+    font-size: 13px;
+    color: var(--text-normal);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Chevron for expand/collapse */
+.voyaru-tool-chevron {
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+    color: var(--text-muted);
+}
+
+/* Details panel (expandable) */
+.voyaru-tool-details {
+    padding: 12px;
+    border-top: 1px solid var(--background-modifier-border);
+    background-color: var(--background-primary);
+    animation: voyaru-slideDown 0.2s ease-out;
+}
+
+/* Running state with progress bar */
+.voyaru-tool-call-item.running {
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+
+.voyaru-tool-call-item.running .voyaru-tool-call-header {
+    background: linear-gradient(
+        90deg,
+        rgba(var(--interactive-accent-rgb), 0.05) 0%,
+        transparent 100%
+    );
+}
+
+.voyaru-tool-call-item.running::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 2px;
+    background: linear-gradient(
+        90deg,
+        var(--interactive-accent) 0%,
+        var(--interactive-accent-hover) 50%,
+        var(--interactive-accent) 100%
+    );
+    background-size: 200% 100%;
+    animation: voyaru-progressSlide 1.5s ease-in-out infinite;
+}
+
+/* ===== ANIMATIONS ===== */
+
+/* Spinning animation for loading spinner */
+@keyframes voyaru-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.voyaru-spinning {
+    animation: voyaru-spin 1s linear infinite;
+}
+
+/* Pulse animation for running state */
+@keyframes voyaru-pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+/* Slide down animation for details */
+@keyframes voyaru-slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Progress bar animation */
+@keyframes voyaru-progressSlide {
+    0% { background-position: 100% 0; }
+    100% { background-position: -100% 0; }
+}

@@ -8,6 +8,7 @@ import { Notice, Menu, TFile, MarkdownView, Platform } from 'obsidian';
 import { ExportModal } from '../modals/ExportModal';
 import { LogModal } from '../modals/LogModal';
 import { HistoryPromptModal } from '../modals/HistoryPromptModal';
+import { ToolCallItem } from '../components/ToolCallItem';
 
 export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerEl?: HTMLElement }) => {
     const [sessions, setSessions] = useState<Session[]>([]);
@@ -558,6 +559,17 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         }
     };
 
+    // 通用的滚动检查触发函数
+    const triggerScrollCheck = () => {
+        requestAnimationFrame(() => {
+            const section = lastQaSectionRef.current;
+            const container = messagesContainerRef.current;
+            if (section && container) {
+                maybeAutoScrollDuringStreaming(section);
+            }
+        });
+    };
+
     // 动态计算底部空间高度
     // 原则3：如果长度不够填充聊天窗口，则在query尾部和聊天窗口底部之间填入一段空白，
     // 以保证来回滚动时，可以将query滚动到聊天窗口顶部
@@ -694,19 +706,22 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                 // 临时设置为1px以获取内容的真实高度
                 input.style.height = '1px';
                 const scrollHeight = input.scrollHeight;
-                
+
                 // 计算最大高度（对话栏的一半）
                 const containerHeight = messagesContainerRef.current?.clientHeight || 600;
                 const maxHeight = Math.floor(containerHeight / 2);
-                
+
                 // 计算新高度，不超过最大高度，不小于最小高度
                 const newHeight = Math.max(40, Math.min(scrollHeight, maxHeight));
-                
+
                 // 直接应用新高度到DOM（避免闪烁）
                 input.style.height = `${newHeight}px`;
-                
-                // 同时更新state（保持同步）
-                setTextareaHeight(newHeight);
+
+                // 如果高度发生变化，触发滚动检查
+                if (newHeight !== textareaHeight) {
+                    setTextareaHeight(newHeight);
+                    triggerScrollCheck();
+                }
             }
         }, 0);
 
@@ -1147,6 +1162,9 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
 
             for await (const chunk of stream) {
                 if (abortControllerRef.current?.signal.aborted) break;
+
+                // Track running tools by their temporary ID
+                let runningToolId: string | null = null;
                 
                 // 第一个 chunk 到达时，确保 query 在顶部
                 if (!hasReceivedAnyChunk && lastUserMessageIdRef.current && messagesEndRef.current) {
@@ -1188,27 +1206,73 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     flushUpdate();
                     
                     if (chunk.type === 'thinking') {
-                        // 立即更新thinking消息
-                        setMessages(prev => [...prev, { 
-                            role: 'model', 
-                            content: chunk.content, 
-                            type: 'thinking',
-                            id: `msg-${Date.now()}-${Math.random()}-thinking`
-                        }]);
+                        // 过滤掉 "调用工具" 的 thinking 消息，因为工具状态会由 tool_result 展示
+                        if (!chunk.content.startsWith('调用工具:')) {
+                            const thinkingMsg: Message = {
+                                role: 'model',
+                                content: chunk.content,
+                                type: 'thinking',
+                                id: `msg-${Date.now()}-${Math.random()}-thinking`
+                            };
+                            setMessages(prev => {
+                                const newMessages = [...prev, thinkingMsg];
+                                // 触发滚动检查
+                                triggerScrollCheck();
+                                return newMessages;
+                            });
+                        }
                     } else if (chunk.type === 'tool_result') {
-                        // 立即更新tool_result消息
-                        setMessages(prev => [...prev, { 
-                            role: 'model', 
-                            content: `Tool ${chunk.tool} executed: ${chunk.result}`, 
+                        // AIService 返回的 chunk 可能是扁平结构，需要转换
+                        const args = chunk.args || chunk.toolData?.args;
+                        const result = chunk.result || chunk.toolData?.result;
+                        const undoData = chunk.undoData || chunk.toolData?.undoData;
+
+                        // 创建消息 ID
+                        const toolId = chunk.id || `tool-${chunk.tool}-${Date.now()}`;
+                        const startTime = Date.now();
+
+                        // 先创建 running 状态
+                        const runningMessage: Message = {
+                            role: 'model',
                             type: 'tool_result',
                             tool: chunk.tool,
-                            toolData: { 
-                                result: chunk.result, 
-                                args: chunk.args,
-                                undoData: chunk.undoData 
+                            content: '',  // 由 ToolCallItem 生成
+                            toolData: {
+                                args,
+                                result: undefined,  // running 状态不显示 result
+                                undoData
                             },
-                            id: `msg-${Date.now()}-${Math.random()}-tool`
-                        }]);
+                            id: toolId,
+                            status: 'running',
+                            startTime,
+                            expanded: false
+                        };
+
+                        setMessages(prev => [...prev, runningMessage]);
+
+                        // 短暂延迟后更新为 completed
+                        setTimeout(() => {
+                            setMessages(prev => {
+                                const index = prev.findIndex(m => m.id === toolId);
+                                if (index !== -1 && prev[index]) {
+                                    const newMessages = [...prev];
+                                    newMessages[index] = {
+                                        ...prev[index]!,
+                                        status: 'completed',
+                                        endTime: Date.now(),
+                                        toolData: {
+                                            args,
+                                            result,
+                                            undoData
+                                        }
+                                    };
+                                    // 触发滚动检查
+                                    triggerScrollCheck();
+                                    return newMessages;
+                                }
+                                return prev;
+                            });
+                        }, 200);  // 延迟增加到 200ms
                     } else if (chunk.type === 'error') {
                         console.error('Error chunk received:', chunk.content);
                         setMessages(prev => [...prev, { 
@@ -1632,137 +1696,39 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         }
     };
 
-    // 预处理消息，合并连续的工具调用
-    const processMessages = (msgs: Message[]) => {
-        const result: (Message | { type: 'tool_group', messages: Message[], id: string })[] = [];
-        let currentGroup: Message[] = [];
-
-        for (let i = 0; i < msgs.length; i++) {
-            const m = msgs[i];
-            if (!m) continue;
-
-            if ((m.type === 'tool_result' && m.tool !== 'writeFile') || m.type === 'thinking') {
-                currentGroup.push(m);
-            } else {
-                // 如果当前有堆积的group，先push
-                if (currentGroup.length > 0) {
-                    const firstMsg = currentGroup[0];
-                    if (firstMsg && firstMsg.id) {
-                        result.push({
-                            type: 'tool_group',
-                            messages: [...currentGroup],
-                            id: `group-${firstMsg.id}`
-                        });
-                    }
-                    currentGroup = [];
-                }
-                result.push(m);
+    // Handle toggle expand/collapse for tool call items
+    const handleToggleToolExpand = (messageId: string) => {
+        setMessages(prev => prev.map(m => {
+            if (m.id === messageId) {
+                return { ...m, expanded: !m.expanded };
             }
-        }
-        // 处理最后的group
-        if (currentGroup.length > 0) {
-            const firstMsg = currentGroup[0];
-            if (firstMsg && firstMsg.id) {
-                result.push({
-                    type: 'tool_group',
-                    messages: [...currentGroup],
-                    id: `group-${firstMsg.id}`
-                });
-            }
-        }
-        return result;
+            return m;
+        }));
     };
 
-    const CollapsibleToolGroup = ({ messages }: { messages: Message[] }) => {
-        const [isExpanded, setIsExpanded] = useState(false);
-        
-        return (
-            <div style={{ marginBottom: '16px', padding: '0 44px' }}>
-                <div 
-                    onClick={() => setIsExpanded(!isExpanded)}
-                    style={{
-                        fontSize: '12px',
-                        color: 'var(--text-muted)',
-                        backgroundColor: 'var(--background-primary-alt)',
-                        padding: '8px 12px',
-                        borderRadius: '8px',
-                        border: '1px solid var(--background-modifier-border)',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        userSelect: 'none'
-                    }}
-                >
-                    <div style={{ 
-                        transition: 'transform 0.2s', 
-                        transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)', 
-                        display: 'flex', alignItems: 'center'
-                    }}>
-                        <ChevronDownIcon size={12} />
-                    </div>
-                    <ToolIcon size={12} />
-                    <span>已执行 {messages.length} 项操作...</span>
-                </div>
-                
-                {isExpanded && (
-                    <div style={{ 
-                        marginTop: '8px', 
-                        paddingLeft: '12px', 
-                        borderLeft: '2px solid var(--background-modifier-border)',
-                        marginLeft: '12px'
-                    }}>
-                        {messages.map((m, idx) => (
-                            <div key={m.id || idx} style={{ marginBottom: '8px' }}>
-                                <div style={{ fontSize: '12px', color: 'var(--text-normal)' }}>
-                                    {m.type === 'thinking' ? (
-                                        <span style={{color: 'var(--text-muted)'}}>{m.content}</span>
-                                    ) : (
-                                        <div style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', backgroundColor: 'var(--background-secondary)', padding: '4px', borderRadius: '4px' }}>
-                                            {m.content}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-        );
-    };
-
-    const displayedMessages = processMessages(messages);
-    
     // Find last user message ID for "Edit" button logic
     const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
     const lastUserMessageId = lastUserMessage?.id;
-    
-    // Group messages into QA sections
-    const qaGroups: { 
-        id: string;
-        userMessage: Message | null; 
-        messages: (Message | { type: 'tool_group', messages: Message[], id: string })[] 
-    }[] = [];
-    
-    let currentGroup: { 
-        id: string; 
-        userMessage: Message | null; 
-        messages: (Message | { type: 'tool_group', messages: Message[], id: string })[] 
-    } | null = null;
-    
-    displayedMessages.forEach((item) => {
-        let isUserMessage = false;
-        // Check if it's a message and role is user
-        if (!('messages' in item) && (item as Message).role === 'user') {
-            isUserMessage = true;
-        }
 
-        if (isUserMessage) {
+    // Group messages into QA sections (simplified, no tool grouping)
+    const qaGroups: {
+        id: string;
+        userMessage: Message | null;
+        messages: Message[]
+    }[] = [];
+
+    let currentGroup: {
+        id: string;
+        userMessage: Message | null;
+        messages: Message[]
+    } | null = null;
+
+    messages.forEach((item) => {
+        if (item.role === 'user') {
             // Start a new group
-            const msg = item as Message;
             currentGroup = {
-                id: `qa-group-${msg.id}`,
-                userMessage: msg,
+                id: `qa-group-${item.id}`,
+                userMessage: item,
                 messages: []
             };
             qaGroups.push(currentGroup);
@@ -1783,82 +1749,9 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
 
     // Helper to render a single message (User or Model)
     const renderMessageContent = (m: Message, isHeader: boolean = false) => {
-        // Render WriteFile Card
-        if (m.type === 'tool_result' && m.tool === 'writeFile') {
-             const args = m.toolData?.args || {};
-             const content = args.content || "";
-             const path = args.path || "Untitled";
-             const wordCount = content.length; // Approximate char count
-             
-             return (
-                <div key={m.id} style={{ marginBottom: '16px', display: 'flex', justifyContent: 'flex-start', paddingLeft: '44px' }}>
-                    <div style={{
-                        border: '1px solid var(--background-modifier-border)',
-                        borderRadius: '12px',
-                        backgroundColor: 'var(--background-secondary)',
-                        width: '240px',
-                        overflow: 'hidden',
-                        transition: 'transform 0.2s ease',
-                        cursor: 'pointer'
-                    }}
-                    onClick={async () => {
-                        try {
-                            // 尝试解析文件
-                            let file = plugin.app.vault.getAbstractFileByPath(path);
-                            if (!file) {
-                                file = plugin.app.metadataCache.getFirstLinkpathDest(path, '');
-                            }
-
-                            if (file instanceof TFile) {
-                            // 查找是否已在某个 Leaf 打开
-                            let foundLeaf: any = null;
-                            if (plugin.app && plugin.app.workspace) {
-                                plugin.app.workspace.iterateAllLeaves((leaf: any) => {
-                                    if (leaf.view && leaf.view instanceof MarkdownView && leaf.view.file && leaf.view.file.path === file.path) {
-                                        foundLeaf = leaf;
-                                    }
-                                });
-                            }
-
-                                if (foundLeaf) {
-                                    plugin.app.workspace.setActiveLeaf(foundLeaf, { focus: true });
-                                } else {
-                                    // 未打开，新建标签页打开
-                                    await plugin.app.workspace.getLeaf(true).openFile(file);
-                                }
-                            } else {
-                                // 降级处理
-                                await plugin.app.workspace.openLinkText(path, '', true);
-                            }
-                        } catch (e) {
-                            console.error("Failed to open file:", e);
-                            await plugin.app.workspace.openLinkText(path, '', true);
-                        }
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
-                    onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
-                    >
-                        <div style={{
-                            padding: '12px',
-                            borderBottom: '1px solid var(--background-modifier-border)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            fontWeight: 600
-                        }}>
-                            <FileIcon size={16} />
-                            <span style={{ fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{path}</span>
-                        </div>
-                        <div style={{ padding: '12px', fontSize: '12px', color: 'var(--text-muted)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-success)' }}>
-                                <CheckIcon size={14} />
-                                <span>文件已更新</span>
-                            </div>
-                            <div style={{ marginTop: '4px' }}>{wordCount} 字符</div>
-                        </div>
-                    </div>
-                </div>
-             );
+        // Render Tool Call Items
+        if (m.type === 'tool_result') {
+            return <ToolCallItem key={m.id} message={m} onToggleExpand={handleToggleToolExpand} />;
         }
 
         // Normal Message (Text, Thinking, Error)
@@ -2507,14 +2400,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
 
                         {/* Content: Model Messages */}
                         <div className="voyaru-qa-content">
-                            {group.messages.map((item, i) => {
-                                if ('messages' in item) { // Tool Group
-                                    const toolGroup = item as { type: 'tool_group', messages: Message[], id: string };
-                                    return <CollapsibleToolGroup key={toolGroup.id} messages={toolGroup.messages} />;
-                                } else {
-                                    return renderMessageContent(item as Message, false);
-                                }
-                            })}
+                            {group.messages.map((item, i) => renderMessageContent(item, false))}
                         </div>
                     </div>
                 ))}
