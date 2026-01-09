@@ -1,0 +1,9 @@
+{
+	"id": "voyaru-plugin",
+	"name": "Voyaru AI Writer",
+	"version": "1.0.0",
+	"minAppVersion": "1.0.0",
+	"description": "AI-powered writing assistant for fiction.",
+	"author": "Voyaru Team",
+	"isDesktopOnly": false
+}

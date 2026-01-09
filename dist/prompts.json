@@ -1,9 +1,4 @@
-/**
- * Default embedded prompts configuration
- * This is a fallback when prompts.json is not available
- * Used to ensure the plugin works for end users without requiring prompts.json file
- */
-export const DEFAULT_PROMPTS = {
+{
   "version": "1.0.0",
   "system": {
     "base": {
@@ -236,4 +231,4 @@ export const DEFAULT_PROMPTS = {
       "variables": ["filePath", "startLine", "endLine", "originalContent", "contextBefore", "contextAfter", "query"]
     }
   }
-} as const;
+}

@@ -426,9 +426,16 @@ Models are defined in `MODELS` constant in `settings.ts`.
 
 1. Update `version` in `manifest.json` (follow SemVer)
 2. Run `npm run version` to update version files
-3. Create GitHub release with tag matching version (no `v` prefix)
-4. Attach `manifest.json`, `main.js`, and `styles.css` to release
-5. Update `versions.json` to map plugin version → minimum Obsidian version
+3. Run `npm run build` to generate production build
+4. Create GitHub release with tag matching version (no `v` prefix)
+5. **Attach the following files to release**:
+   - ✅ `manifest.json` - Plugin metadata
+   - ✅ `main.js` - Bundled plugin code
+   - ✅ `styles.css` - Custom styling
+   - ✅ **`prompts.json`** ⚠️ **CRITICAL: Contains editFile tool definition and latest AI prompts**
+6. Update `versions.json` to map plugin version → minimum Obsidian version
+
+**Note**: The `prompts.json` file is essential for the plugin to function properly. It contains the latest AI tool definitions (including `editFile`) and system prompts. While the plugin has fallback prompts embedded in code, users downloading from releases need this file to access the newest features.
 
 ## External Dependencies
 
