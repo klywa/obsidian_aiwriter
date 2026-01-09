@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { Message } from '../settings';
+import { TFile, MarkdownView } from 'obsidian';
 import {
     CheckIcon,
     ChevronDownIcon,
@@ -17,9 +18,10 @@ import {
 interface ToolCallItemProps {
     message: Message;
     onToggleExpand: (id: string) => void;
+    plugin?: any; // Obsidian plugin instance for file operations
 }
 
-export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExpand }) => {
+export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExpand, plugin }) => {
     const status = message.status || 'completed';
     const isRunning = status === 'running';
     const isCompleted = status === 'completed';
@@ -129,6 +131,85 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
         return `${(ms / 1000).toFixed(1)}s`;
     };
 
+    // Get file path for file operations
+    const getFilePath = (): string | null => {
+        const args = message.toolData?.args || {};
+        if (message.tool === 'readFile' ||
+            message.tool === 'writeFile' ||
+            message.tool === 'editFile' ||
+            message.tool === 'deleteFile') {
+            return args.path || null;
+        }
+        return null;
+    };
+
+    // Open file in Obsidian
+    const openFile = async (path: string) => {
+        if (!plugin) return;
+        try {
+            let file = plugin.app.vault.getAbstractFileByPath(path);
+            if (!file) {
+                file = plugin.app.metadataCache.getFirstLinkpathDest(path, '');
+            }
+
+            if (file instanceof TFile) {
+                // Check if already open in any leaf
+                let foundLeaf: any = null;
+                if (plugin.app && plugin.app.workspace) {
+                    plugin.app.workspace.iterateAllLeaves((leaf: any) => {
+                        if (leaf.view && leaf.view instanceof MarkdownView &&
+                            leaf.view.file && leaf.view.file.path === file.path) {
+                            foundLeaf = leaf;
+                        }
+                    });
+                }
+
+                if (foundLeaf) {
+                    plugin.app.workspace.setActiveLeaf(foundLeaf, { focus: true });
+                } else {
+                    await plugin.app.workspace.getLeaf(true).openFile(file);
+                }
+            } else {
+                await plugin.app.workspace.openLinkText(path, '', true);
+            }
+        } catch (e) {
+            console.error("Failed to open file:", e);
+            await plugin.app.workspace.openLinkText(path, '', true);
+        }
+    };
+
+    // Render description with file link
+    const renderDescription = () => {
+        const filePath = getFilePath();
+        const description = getToolDescription();
+
+        if (filePath && isCompleted && plugin) {
+            // File operation completed, make file path clickable
+            return (
+                <span
+                    onClick={() => openFile(filePath)}
+                    style={{
+                        cursor: 'pointer',
+                        textDecoration: 'underline',
+                        textDecorationStyle: 'dashed',
+                        textDecorationColor: 'var(--interactive-accent)',
+                        color: 'var(--text-normal)'
+                    }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.color = 'var(--interactive-accent)';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.color = 'var(--text-normal)';
+                    }}
+                >
+                    {description}
+                </span>
+            );
+        }
+
+        return <span>{description}</span>;
+    };
+
     return (
         <div
             className={`voyaru-tool-call-item ${status}`}
@@ -207,7 +288,7 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
                         textOverflow: 'ellipsis',
                     }}
                 >
-                    {getToolDescription()}
+                    {renderDescription()}
                 </div>
 
                 {/* Expand Chevron */}

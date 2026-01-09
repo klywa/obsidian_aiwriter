@@ -1221,58 +1221,88 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                 return newMessages;
                             });
                         }
-                    } else if (chunk.type === 'tool_result') {
-                        // AIService 返回的 chunk 可能是扁平结构，需要转换
-                        const args = chunk.args || chunk.toolData?.args;
-                        const result = chunk.result || chunk.toolData?.result;
-                        const undoData = chunk.undoData || chunk.toolData?.undoData;
-
-                        // 创建消息 ID
-                        const toolId = chunk.id || `tool-${chunk.tool}-${Date.now()}`;
-                        const startTime = Date.now();
-
-                        // 先创建 running 状态
+                    } else if (chunk.type === 'tool_call_start') {
+                        // 工具调用开始，立即创建 running 状态的消息
+                        const toolId = `tool-${chunk.tool}-${Date.now()}-${Math.random()}`;
                         const runningMessage: Message = {
                             role: 'model',
                             type: 'tool_result',
                             tool: chunk.tool,
-                            content: '',  // 由 ToolCallItem 生成
+                            content: '',
                             toolData: {
-                                args,
-                                result: undefined,  // running 状态不显示 result
-                                undoData
+                                args: chunk.args || {},
+                                result: undefined,
+                                undoData: undefined
                             },
                             id: toolId,
                             status: 'running',
-                            startTime,
+                            startTime: Date.now(),
                             expanded: false
                         };
+                        setMessages(prev => {
+                            const newMessages = [...prev, runningMessage];
+                            // 触发滚动检查
+                            triggerScrollCheck();
+                            return newMessages;
+                        });
+                    } else if (chunk.type === 'tool_result') {
+                        // 查找匹配的 running 状态消息
+                        setMessages(prev => {
+                            const runningMsgIndex = prev.findIndex(m =>
+                                m.type === 'tool_result' &&
+                                m.tool === chunk.tool &&
+                                m.status === 'running'
+                            );
 
-                        setMessages(prev => [...prev, runningMessage]);
+                            // AIService 返回的 chunk 可能是扁平结构，需要转换
+                            const args = chunk.args || chunk.toolData?.args;
+                            const result = chunk.result || chunk.toolData?.result;
+                            const undoData = chunk.undoData || chunk.toolData?.undoData;
 
-                        // 短暂延迟后更新为 completed
-                        setTimeout(() => {
-                            setMessages(prev => {
-                                const index = prev.findIndex(m => m.id === toolId);
-                                if (index !== -1 && prev[index]) {
-                                    const newMessages = [...prev];
-                                    newMessages[index] = {
-                                        ...prev[index]!,
-                                        status: 'completed',
-                                        endTime: Date.now(),
-                                        toolData: {
-                                            args,
-                                            result,
-                                            undoData
-                                        }
-                                    };
-                                    // 触发滚动检查
-                                    triggerScrollCheck();
-                                    return newMessages;
-                                }
-                                return prev;
-                            });
-                        }, 200);  // 延迟增加到 200ms
+                            if (runningMsgIndex !== -1) {
+                                // 找到对应的 running 消息，直接更新为 completed
+                                const runningMsg = prev[runningMsgIndex];
+                                if (!runningMsg) return prev;
+
+                                const updated = [...prev];
+                                updated[runningMsgIndex] = {
+                                    ...runningMsg,
+                                    status: 'completed' as const,
+                                    endTime: Date.now(),
+                                    toolData: {
+                                        args: args || runningMsg.toolData?.args || {},
+                                        result,
+                                        undoData: undoData || runningMsg.toolData?.undoData
+                                    }
+                                };
+                                // 触发滚动检查
+                                triggerScrollCheck();
+                                return updated;
+                            } else {
+                                // 没有找到 running 消息（可能 tool_call_start 没有触发），直接创建 completed
+                                const toolId = chunk.id || `tool-${chunk.tool}-${Date.now()}`;
+                                const completedMessage: Message = {
+                                    role: 'model',
+                                    type: 'tool_result',
+                                    tool: chunk.tool,
+                                    content: '',
+                                    toolData: {
+                                        args: args || {},
+                                        result,
+                                        undoData
+                                    },
+                                    id: toolId,
+                                    status: 'completed' as const,
+                                    startTime: Date.now(),
+                                    endTime: Date.now(),
+                                    expanded: false
+                                };
+                                const newMessages = [...prev, completedMessage];
+                                // 触发滚动检查
+                                triggerScrollCheck();
+                                return newMessages;
+                            }
+                        });
                     } else if (chunk.type === 'error') {
                         console.error('Error chunk received:', chunk.content);
                         setMessages(prev => [...prev, { 
@@ -1751,7 +1781,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const renderMessageContent = (m: Message, isHeader: boolean = false) => {
         // Render Tool Call Items
         if (m.type === 'tool_result') {
-            return <ToolCallItem key={m.id} message={m} onToggleExpand={handleToggleToolExpand} />;
+            return <ToolCallItem key={m.id} message={m} onToggleExpand={handleToggleToolExpand} plugin={plugin} />;
         }
 
         // Normal Message (Text, Thinking, Error)

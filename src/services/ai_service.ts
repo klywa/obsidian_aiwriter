@@ -739,7 +739,12 @@ export class AIService {
                      if (calls && calls.length > 0) {
                          functionCalls.push(...calls);
                          for (const call of calls) {
-                             yield { type: "thinking", content: `调用工具: ${call.name}` };
+                             // 立即 yield 工具调用开始信息，包含参数
+                             yield {
+                                 type: "tool_call_start",
+                                 tool: call.name,
+                                 args: call.args
+                             };
                          }
                      }
                 }
