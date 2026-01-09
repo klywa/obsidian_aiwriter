@@ -226,21 +226,11 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
             {/* Header (always visible) */}
             <div
                 className="voyaru-tool-call-header"
-                onClick={() => message.id && onToggleExpand(message.id)}
                 style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: '8px',
                     padding: '10px 12px',
-                    cursor: 'pointer',
-                    userSelect: 'none',
-                    transition: 'background-color 0.15s ease',
-                }}
-                onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'var(--background-modifier-hover)';
-                }}
-                onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'transparent';
                 }}
             >
                 {/* Status Icon */}
@@ -291,23 +281,37 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
                     {renderDescription()}
                 </div>
 
-                {/* Expand Chevron */}
-                <div
+                {/* Expand Chevron Button */}
+                <button
                     className={`voyaru-tool-chevron ${expanded ? 'expanded' : ''}`}
+                    onClick={() => message.id && onToggleExpand(message.id)}
                     style={{
-                        width: '16px',
-                        height: '16px',
+                        width: '24px',
+                        height: '24px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         flexShrink: 0,
-                        transition: 'transform 0.2s ease',
+                        transition: 'all 0.15s ease',
                         color: 'var(--text-muted)',
                         transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                        background: 'transparent',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        padding: '0',
+                    }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = 'var(--background-modifier-hover)';
+                        e.currentTarget.style.color = 'var(--text-normal)';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = 'transparent';
+                        e.currentTarget.style.color = 'var(--text-muted)';
                     }}
                 >
                     <ChevronDownIcon size={14} />
-                </div>
+                </button>
             </div>
 
             {/* Details Panel (expandable) */}
