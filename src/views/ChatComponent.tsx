@@ -9,6 +9,10 @@ import { ExportModal } from '../modals/ExportModal';
 import { LogModal } from '../modals/LogModal';
 import { HistoryPromptModal } from '../modals/HistoryPromptModal';
 import { ToolCallItem } from '../components/ToolCallItem';
+import { TypewriterText } from '../components/TypewriterText';
+import { LoadingIndicator } from '../components/LoadingIndicator';
+import { ErrorMessage } from '../components/ErrorMessage';
+import { Toast } from '../components/Toast';
 
 export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerEl?: HTMLElement }) => {
     const [sessions, setSessions] = useState<Session[]>([]);
@@ -40,7 +44,8 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const [editingLastQueryId, setEditingLastQueryId] = useState<string | null>(null); // 标记正在编辑最后一条query
     const [textareaHeight, setTextareaHeight] = useState<number>(40); // 控制textarea的动态高度
     const [isComposing, setIsComposing] = useState(false); // 跟踪输入法状态
-    
+    const [streamingTextMessageId, setStreamingTextMessageId] = useState<string | null>(null); // 追踪正在流式输出的文本消息ID
+
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const popupRef = useRef<HTMLDivElement>(null);
@@ -349,10 +354,10 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
 
         const onScroll = () => {
             if (isProgrammaticScrollRef.current) return;
-            if (!isLoading) return;
 
-            const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-            shouldAutoFollowRef.current = distanceFromBottom < 120;
+            const { scrollTop, scrollHeight, clientHeight } = container;
+            const isAtBottom = scrollHeight - scrollTop - clientHeight < 50; // 50px threshold
+            shouldAutoFollowRef.current = isAtBottom;
         };
 
         container.addEventListener('scroll', onScroll, { passive: true });
@@ -504,9 +509,9 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         // 如果用户手动滚走了，不自动跟随
         if (!shouldAutoFollowRef.current) return;
 
-        // 如果刚完成吸顶（300ms冷却期），暂不自动滚动，避免重复滚动
+        // 如果刚完成吸顶（150ms冷却期），暂不自动滚动，避免重复滚动
         const timeSinceLastScrollToTop = Date.now() - lastScrollToTopTimestampRef.current;
-        if (timeSinceLastScrollToTop < 300) {
+        if (timeSinceLastScrollToTop < 150) {
             console.log('[吸顶调试] 冷却期内，跳过流式输出滚动');
             return;
         }
@@ -1072,6 +1077,9 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             let currentResponseId = `msg-${Date.now()}-response`;
             let currentResponseContent = ""; // Accumulate text for the current message ID
             let hasReceivedAnyChunk = false;
+
+            // 设置当前正在流式输出的文本消息ID
+            setStreamingTextMessageId(currentResponseId);
             let updateTimer: NodeJS.Timeout | null = null;
             let pendingUpdateContent: string | null = null;
             let pendingUpdateId: string | null = null;
@@ -1341,11 +1349,13 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     // we want the NEXT text chunk to start a NEW message bubble.
                     // But if currentResponseContent was empty, we can reuse the ID? 
                     // No, safe to just always rotate ID after an interruption to ensure strict ordering.
-                    // Exception: history_update shouldn't break text flow? 
+                    // Exception: history_update shouldn't break text flow?
                     // Actually history_update usually comes at the end.
                     if (chunk.type !== 'history_update') {
                         currentResponseId = `msg-${Date.now()}-${Math.random()}-response`;
                         currentResponseContent = "";
+                        // 更新流式输出的消息ID
+                        setStreamingTextMessageId(currentResponseId);
                     }
                 }
             }
@@ -1374,6 +1384,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             }]);
         } finally {
             setIsLoading(false);
+            setStreamingTextMessageId(null); // 清除流式输出状态
             abortControllerRef.current = null;
             // 确保最终状态被保存（通过 useEffect 自动触发保存）
         }
@@ -1777,8 +1788,13 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         }
     });
 
+    // Helper to check if a message is currently streaming
+    const isCurrentlyStreaming = (m: Message) => {
+        return isLoading && messages[messages.length - 1]?.id === m.id;
+    };
+
     // Helper to render a single message (User or Model)
-    const renderMessageContent = (m: Message, isHeader: boolean = false) => {
+    const renderMessageContent = (m: Message, isHeader: boolean = false, isLastInGroup: boolean = false) => {
         // Render Tool Call Items
         if (m.type === 'tool_result') {
             return <ToolCallItem key={m.id} message={m} onToggleExpand={handleToggleToolExpand} plugin={plugin} />;
@@ -2047,7 +2063,16 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                     whiteSpace: (m.role === 'user' && collapsedQueries.has(m.id!)) ? 'nowrap' : 'pre-wrap',
                                     maxHeight: (m.role === 'user' && collapsedQueries.has(m.id!)) ? '1.6em' : 'none'
                                 }}>
-                                    {m.content}
+                                    {m.role === 'model' && m.type === 'text' ? (
+                                        <TypewriterText
+                                            text={m.content}
+                                            isStreaming={isLoading && m.id === streamingTextMessageId}
+                                            speed={50}
+                                            onUpdate={triggerScrollCheck}
+                                        />
+                                    ) : (
+                                        m.content
+                                    )}
                                 </div>
                                 
                                 {/* Referenced Files Display in Bubble */}
@@ -2083,8 +2108,8 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                         </div>
                     )}
 
-                    {/* Action Bar (Only for Model Text messages) - only show when not loading */ }
-                    {m.role === 'model' && m.type === 'text' && !isLoading && (
+                    {/* Action Bar (Only for Model Text messages) - only show for last message in group and when not streaming */ }
+                    {m.role === 'model' && m.type === 'text' && isLastInGroup && !isCurrentlyStreaming(m) && (
                         <div style={{
                             display: 'flex',
                             gap: '8px',
@@ -2430,7 +2455,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
 
                         {/* Content: Model Messages */}
                         <div className="voyaru-qa-content">
-                            {group.messages.map((item, i) => renderMessageContent(item, false))}
+                            {group.messages.map((item, i) => renderMessageContent(item, false, i === group.messages.length - 1))}
                         </div>
                     </div>
                 ))}

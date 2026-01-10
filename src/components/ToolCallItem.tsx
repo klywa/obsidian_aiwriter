@@ -29,6 +29,41 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
     const isPending = status === 'pending';
     const expanded = message.expanded || false;
 
+    // Track if component is newly added for entry animation
+    const [isNewlyAdded, setIsNewlyAdded] = React.useState(true);
+
+    // Track if tool has been running for a long time (>1s) to show thinking animation
+    const [isLongRunning, setIsLongRunning] = React.useState(false);
+
+    // Track if tool just completed (show completion animation for 500ms)
+    const [isJustCompleted, setIsJustCompleted] = React.useState(false);
+
+    React.useEffect(() => {
+        const timer = setTimeout(() => setIsNewlyAdded(false), 300);
+        return () => clearTimeout(timer);
+    }, []);
+
+    // Set long-running state after 1 second of running
+    React.useEffect(() => {
+        if (isRunning) {
+            const timer = setTimeout(() => setIsLongRunning(true), 1000);
+            return () => clearTimeout(timer);
+        } else {
+            setIsLongRunning(false);
+            return undefined;
+        }
+    }, [isRunning]);
+
+    // Trigger completion animation when status changes to completed
+    React.useEffect(() => {
+        if (isCompleted && !isJustCompleted) {
+            setIsJustCompleted(true);
+            const timer = setTimeout(() => setIsJustCompleted(false), 500);
+            return () => clearTimeout(timer);
+        }
+        return undefined;
+    }, [isCompleted, isJustCompleted]);
+
     // Get the appropriate tool icon
     const getToolIcon = () => {
         switch (message.tool) {
@@ -42,6 +77,8 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
                 return <TrashIcon size={16} />;
             case 'listFiles':
                 return <FileIcon size={16} />;
+            case 'postCheck':
+                return <CheckIcon size={16} />;
             default:
                 return <ToolIcon size={16} />;
         }
@@ -119,6 +156,20 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
                     fileCount = result.length;
                 }
                 return `Found ${fileCount} file${fileCount !== 1 ? 's' : ''} in ${folder}`;
+            }
+            case 'postCheck': {
+                const filePath = args.filePath || 'file';
+                if (isRunning || isPending) return `Running post-check on ${filePath}...`;
+                if (isFailed) return `Post-check failed for ${filePath}`;
+                // Parse result to show summary
+                if (typeof result === 'string') {
+                    if (result.includes('meets all requirements')) {
+                        return `Post-check passed: ${filePath}`;
+                    } else if (result.includes('refined')) {
+                        return `Post-check completed: Content refined`;
+                    }
+                }
+                return `Post-check completed for ${filePath}`;
             }
             default:
                 return message.tool || 'Unknown operation';
@@ -221,6 +272,7 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
                 overflow: 'hidden',
                 transition: 'all 0.2s ease',
                 position: 'relative',
+                animation: isNewlyAdded ? 'voyaru-slideDown 0.2s ease-out' : undefined,
             }}
         >
             {/* Header (always visible) */}
@@ -244,6 +296,9 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
                         justifyContent: 'center',
                         flexShrink: 0,
                         color: getStatusColor(),
+                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                        transform: isJustCompleted ? 'scale(1.3)' : (status === 'completed' ? 'scale(1.15)' : 'scale(1)'),
+                        filter: isJustCompleted ? 'drop-shadow(0 0 4px var(--text-success))' : 'none',
                     }}
                 >
                     {getStatusIcon()}
@@ -260,7 +315,8 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
                         justifyContent: 'center',
                         flexShrink: 0,
                         color: getStatusColor(),
-                        transition: 'color 0.2s ease',
+                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                        transform: isJustCompleted ? 'scale(1.1)' : 'scale(1)',
                     }}
                 >
                     {getToolIcon()}
@@ -313,6 +369,56 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
                     <ChevronDownIcon size={14} />
                 </button>
             </div>
+
+            {/* Progress Bar (running state) */}
+            {isRunning && (
+                <div style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    height: '2px',
+                    backgroundColor: 'var(--background-modifier-border)',
+                    overflow: 'hidden',
+                }}>
+                    <div style={{
+                        height: '100%',
+                        width: '100%',
+                        background: `linear-gradient(90deg,
+                            transparent 0%,
+                            var(--interactive-accent) 50%,
+                            transparent 100%)`,
+                        backgroundSize: '200% 100%',
+                        animation: 'voyaru-progressSlide 1.5s ease-in-out infinite',
+                    }} />
+                </div>
+            )}
+
+            {/* Thinking dots (for long-running operations >1s) - positioned on left side */}
+            {isLongRunning && (
+                <div style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '44px', // After status icon (18px) + tool icon (18px) + gaps
+                    transform: 'translateY(-50%)',
+                    display: 'flex',
+                    gap: '4px',
+                    alignItems: 'center',
+                }}>
+                    {[0, 1, 2].map((i) => (
+                        <div
+                            key={i}
+                            style={{
+                                width: '4px',
+                                height: '4px',
+                                borderRadius: '50%',
+                                backgroundColor: 'var(--interactive-accent)',
+                                animation: `voyaru-dots-bounce 1.4s ${i * 0.16}s infinite ease-in-out`,
+                            }}
+                        />
+                    ))}
+                </div>
+            )}
 
             {/* Details Panel (expandable) */}
             {expanded && (

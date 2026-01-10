@@ -804,15 +804,20 @@ export class AIService {
                             // 检查是否是章节文件，如果是则触发后置检查和润色
                             const isChapterFile = this.isChapterFile(targetPath);
                             if (isChapterFile && this.settings.enablePostCheck && this.settings.postCheckItems && this.settings.postCheckItems.length > 0) {
-                                yield { type: "thinking", content: "正在进行后置检查和润色..." };
-                                
+                                // Yield tool_call_start for post-check
+                                yield {
+                                    type: "tool_call_start",
+                                    tool: "postCheck",
+                                    args: { filePath: targetPath }
+                                };
+
                                 try {
                                     const { checkResult, refinedContent } = await this.performPostCheckAndRefine(
                                         targetPath,
                                         toolArgs.content,
                                         abortSignal
                                     );
-                                    
+
                                     // 展示检查结果
                                     if (checkResult) {
                                         yield { type: "thinking", content: `后置检查结果：\n\n${checkResult}` };
@@ -825,9 +830,15 @@ export class AIService {
 
                                         // yield第二次writeFile的结果（润色后版本）
                                         yield createToolResult("writeFile", refinedOutput, { path: targetPath, content: refinedContent }, { previousContent: toolArgs.content, path: targetPath });
-                                        
-                                        yield { type: "thinking", content: "后置检查和润色已完成" };
-                                        
+
+                                        // Yield tool_result for post-check (completed with refinement)
+                                        yield {
+                                            type: "tool_result",
+                                            tool: "postCheck",
+                                            args: { filePath: targetPath },
+                                            result: `Content refined (${refinedContent.length} chars). Check result: ${checkResult || 'Passed'}`
+                                        };
+
                                         // 跳过后续的tool_result yield（因为已经yield过了）
                                         functionResponses.push({
                                             functionResponse: {
@@ -837,11 +848,24 @@ export class AIService {
                                         });
                                         continue;
                                     } else {
-                                        yield { type: "thinking", content: "后置检查完成，内容符合要求，无需修改" };
+                                        // Yield tool_result for post-check (completed without changes)
+                                        yield {
+                                            type: "tool_result",
+                                            tool: "postCheck",
+                                            args: { filePath: targetPath },
+                                            result: `Content meets all requirements. Check result: ${checkResult || 'Passed'}`
+                                        };
                                     }
                                 } catch (refineError: any) {
                                     console.error("Post-check refinement error:", refineError);
-                                    yield { type: "thinking", content: `后置检查出错: ${refineError.message}` };
+                                    // Yield tool_result for post-check (failed)
+                                    yield {
+                                        type: "tool_result",
+                                        tool: "postCheck",
+                                        args: { filePath: targetPath },
+                                        result: `Post-check failed: ${refineError.message}`,
+                                        error: true
+                                    };
                                 }
                             }
                             
@@ -934,7 +958,12 @@ export class AIService {
                                     // Read updated file content for post-check
                                     const updatedContent = await this.fs.readFile(toolArgs.path);
 
-                                    yield { type: "thinking", content: "正在进行后置检查..." };
+                                    // Yield tool_call_start for post-check
+                                    yield {
+                                        type: "tool_call_start",
+                                        tool: "postCheck",
+                                        args: { filePath: toolArgs.path }
+                                    };
 
                                     try {
                                         const { checkResult, refinedContent } = await this.performPostCheckAndRefine(
@@ -953,13 +982,32 @@ export class AIService {
 
                                             yield createToolResult("writeFile", `File ${toolArgs.path} refined after post-check`, { path: toolArgs.path, content: refinedContent }, { previousContent: updatedContent, path: toolArgs.path });
 
-                                            yield { type: "thinking", content: "后置检查和润色已完成" };
+                                            // Yield tool_result for post-check (completed with refinement)
+                                            yield {
+                                                type: "tool_result",
+                                                tool: "postCheck",
+                                                args: { filePath: toolArgs.path },
+                                                result: `Content refined (${refinedContent.length} chars). Check result: ${checkResult || 'Passed'}`
+                                            };
                                         } else {
-                                            yield { type: "thinking", content: "后置检查完成,内容符合要求" };
+                                            // Yield tool_result for post-check (completed without changes)
+                                            yield {
+                                                type: "tool_result",
+                                                tool: "postCheck",
+                                                args: { filePath: toolArgs.path },
+                                                result: `Content meets all requirements. Check result: ${checkResult || 'Passed'}`
+                                            };
                                         }
                                     } catch (refineError: any) {
                                         console.error("Post-check refinement error:", refineError);
-                                        yield { type: "thinking", content: `后置检查出错: ${refineError.message}` };
+                                        // Yield tool_result for post-check (failed)
+                                        yield {
+                                            type: "tool_result",
+                                            tool: "postCheck",
+                                            args: { filePath: toolArgs.path },
+                                            result: `Post-check failed: ${refineError.message}`,
+                                            error: true
+                                        };
                                     }
                                 }
 
