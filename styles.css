@@ -2578,3 +2578,100 @@ Design Tokens are imported first to establish the design system foundation.
         border-width: 2px;
     }
 }
+
+/* ========================================
+   Unified Status Icon Styles
+   ======================================== */
+
+/* Status Icon Container */
+.voyaru-status-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+/* Status Colors - Clean, no shadows */
+.voyaru-status-icon--pending {
+    color: var(--text-muted);
+}
+
+.voyaru-status-icon--running {
+    color: var(--interactive-accent);
+}
+
+.voyaru-status-icon--completed {
+    color: var(--text-success);
+}
+
+.voyaru-status-icon--failed {
+    color: var(--text-error);
+}
+
+.voyaru-status-icon--cancelled {
+    color: var(--text-warning, #ff9800);
+}
+
+/* Spinner Animation */
+@keyframes voyaru-spinner-rotate {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.voyaru-status-spinner {
+    animation: voyaru-spinner-rotate 1s linear infinite;
+}
+
+/* ========================================
+   Waiting Message Styles
+   ======================================== */
+
+/* Waiting Message Container */
+.voyaru-waiting-message {
+    padding: 12px 16px;
+    background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 12px;
+    margin: 8px 16px 16px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    animation: voyaru-waiting-fade-in 0.3s ease-out;
+}
+
+.voyaru-waiting-message--exiting {
+    animation: voyaru-waiting-fade-out 0.3s ease-out forwards;
+}
+
+.voyaru-waiting-message-text {
+    color: var(--text-muted);
+    font-size: 0.95em;
+    font-style: italic;
+}
+
+/* Waiting Message Fade Animations */
+@keyframes voyaru-waiting-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes voyaru-waiting-fade-out {
+    from {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+}

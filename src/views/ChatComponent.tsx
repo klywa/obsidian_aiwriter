@@ -13,6 +13,7 @@ import { TypewriterText } from '../components/TypewriterText';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 import { ErrorMessage } from '../components/ErrorMessage';
 import { Toast } from '../components/Toast';
+import { WaitingMessage } from '../components/WaitingMessage';
 
 export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerEl?: HTMLElement }) => {
     const [sessions, setSessions] = useState<Session[]>([]);
@@ -45,6 +46,8 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const [textareaHeight, setTextareaHeight] = useState<number>(40); // 控制textarea的动态高度
     const [isComposing, setIsComposing] = useState(false); // 跟踪输入法状态
     const [streamingTextMessageId, setStreamingTextMessageId] = useState<string | null>(null); // 追踪正在流式输出的文本消息ID
+    const [showWaitingMessage, setShowWaitingMessage] = useState(false); // 等待消息状态（简化版）
+    const waitingMessageClearedRef = useRef(false); // 跟踪等待消息是否已被清除（只在收到 text chunk 时清除）
 
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -99,6 +102,12 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             document.removeEventListener('mousedown', handleClickOutside);
         };
     }, [editingMessageId]);
+
+    // 调试：追踪 showWaitingMessage 状态变化
+    useEffect(() => {
+        console.log('[WaitingMessage] State changed:', showWaitingMessage);
+        console.log('[WaitingMessage] Timestamp:', Date.now());
+    }, [showWaitingMessage]);
 
     // 加载保存的sessions和当前选中的session
     useEffect(() => {
@@ -935,8 +944,15 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     };
 
     const handleSendMessage = async (manualContent?: string, manualFiles?: string[], manualHistory?: any[]) => {
+        console.log('[WaitingMessage DEBUG] ===== handleSendMessage called =====');
+        console.log('[WaitingMessage DEBUG] plugin.settings.waitingMessageDelay:', plugin.settings.waitingMessageDelay);
+        console.log('[WaitingMessage DEBUG] plugin.settings.waitingMessages:', plugin.settings.waitingMessages);
         const contentToSend = manualContent ?? inputValue;
-        if (!contentToSend.trim() || isLoading) return;
+        if (!contentToSend.trim() || isLoading) {
+            console.log('[WaitingMessage DEBUG] Early return: contentToSend=', contentToSend, 'isLoading=', isLoading);
+            return;
+        }
+        console.log('[WaitingMessage DEBUG] Passed early return check, proceeding...');
 
         const filesToSend = manualFiles ?? referencedFiles;
         let historyToUse = manualHistory ?? chatHistory;
@@ -1039,6 +1055,15 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         if (!manualFiles) setReferencedFiles([]);
         setIsLoading(true);
 
+        // 重置等待消息清除标志
+        waitingMessageClearedRef.current = false;
+
+        // 立即显示等待消息（不使用定时器，避免竞态条件）
+        console.log('[WaitingMessage] Showing waiting message immediately');
+        console.log('[WaitingMessage] Current timestamp:', Date.now());
+        setShowWaitingMessage(true);
+        console.log('[WaitingMessage] State update scheduled');
+
         // 更新当前session的消息（在发送时）
         if (currentSessionId) {
             setSessions(prev => prev.map(s => {
@@ -1077,6 +1102,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             let currentResponseId = `msg-${Date.now()}-response`;
             let currentResponseContent = ""; // Accumulate text for the current message ID
             let hasReceivedAnyChunk = false;
+            let waitingMessageStartTime = Date.now(); // 记录等待消息开始显示的时间
 
             // 设置当前正在流式输出的文本消息ID
             setStreamingTextMessageId(currentResponseId);
@@ -1197,14 +1223,36 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                         }
                     }
                 }
-                
-                hasReceivedAnyChunk = true;
+
                 // Accumulate logs
                 fullLog.push(chunk);
-                
+
                 console.log('Received chunk:', chunk.type, chunk);
-                
+
                 if (chunk.type === 'text') {
+                    // 只在收到第一个 text chunk 时清除等待消息
+                    if (!waitingMessageClearedRef.current) {
+                        console.log('[WaitingMessage] First text chunk received, clearing waiting message');
+                        waitingMessageClearedRef.current = true;
+
+                        // 检查等待消息显示了多久
+                        const elapsed = Date.now() - waitingMessageStartTime;
+                        const minDisplayTime = 100; // 最小显示时间 100ms
+
+                        if (elapsed < minDisplayTime) {
+                            // 如果显示时间太短，延迟清除
+                            const remainingTime = minDisplayTime - elapsed;
+                            console.log('[WaitingMessage] Delaying clear by', remainingTime, 'ms');
+                            setTimeout(() => {
+                                console.log('[WaitingMessage] Delayed clear executed');
+                                setShowWaitingMessage(false);
+                            }, remainingTime);
+                        } else {
+                            // 显示时间足够长，立即清除
+                            setShowWaitingMessage(false);
+                        }
+                    }
+
                     // Normal text accumulation
                     currentResponseContent += chunk.content;
                     scheduleUpdate(currentResponseId, currentResponseContent);
@@ -1386,6 +1434,8 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             setIsLoading(false);
             setStreamingTextMessageId(null); // 清除流式输出状态
             abortControllerRef.current = null;
+            // 清除等待消息状态
+            setShowWaitingMessage(false);
             // 确保最终状态被保存（通过 useEffect 自动触发保存）
         }
     };
@@ -2141,8 +2191,11 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         );
     };
 
+    // 渲染前记录状态
+    console.log('[ChatComponent] Rendering with showWaitingMessage:', showWaitingMessage);
+
     return (
-        <div className="voyaru-chat-container" style={{ 
+        <div className="voyaru-chat-container" style={{
             display: 'flex', 
             flexDirection: 'column', 
             height: '100%',
@@ -2459,7 +2512,17 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                         </div>
                     </div>
                 ))}
-                
+
+                {/* 等待消息 - AI 响应延迟时显示 */}
+                {showWaitingMessage && (
+                    <WaitingMessage
+                        messages={plugin.settings.waitingMessages || ['思考中...']}
+                        interval={plugin.settings.waitingMessageInterval || 500}
+                        isVisible={true}
+                        onFadeOutComplete={() => setShowWaitingMessage(false)}
+                    />
+                )}
+
                 <div ref={messagesEndRef} />
                 {/* 底部占位空间，动态计算以防止过度滚动 */}
                 <div id="voyaru-bottom-spacer" style={{ 

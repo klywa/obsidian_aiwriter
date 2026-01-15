@@ -20,7 +20,7 @@ export interface PostCheckItem {
     checkPrompt: string;
 }
 
-export type MessageStatus = 'pending' | 'running' | 'completed' | 'failed';
+export type MessageStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export interface Message {
     role: 'user' | 'model' | 'system' | 'error';
@@ -106,6 +106,11 @@ export interface VoyaruSettings {
     maxFilesInPopup: number;
     queryHistory: QueryHistoryItem[];
     sendWithShiftEnter: boolean;
+
+    // 等待消息配置
+    waitingMessageDelay: number;      // 显示等待消息前的延迟（毫秒）
+    waitingMessageInterval: number;   // 等待消息切换间隔（毫秒）
+    waitingMessages: string[];        // 预设等待文字列表
 }
 
 // Note: DEFAULT_TOOLS and DEFAULT_POST_CHECK_ITEMS are now loaded from prompts.json
@@ -160,7 +165,20 @@ export const DEFAULT_SETTINGS: VoyaruSettings = {
     fontSize: 14,
     contextMode: 'server',
     referenceMode: 'path',
-    maxFilesInPopup: 10
+    maxFilesInPopup: 10,
+
+    // 等待消息配置
+    waitingMessageDelay: 0,  // 改为0表示立即显示等待消息（原来500ms延迟可能导致来不及显示）
+    waitingMessageInterval: 500,
+    waitingMessages: [
+        "思考中...",
+        "搜索枯肠中...",
+        "绞尽脑汁中...",
+        "正在查阅资料...",
+        "正在削铅笔...",
+        "组织语言中...",
+        "灵感涌现中..."
+    ]
 };
 
 export class VoyaruSettingTab extends PluginSettingTab {
@@ -403,6 +421,51 @@ export class VoyaruSettingTab extends PluginSettingTab {
                     if (!isNaN(num) && num >= 1 && num <= 200) {
                         this.plugin.settings.maxFilesInPopup = num;
                         await this.plugin.saveSettings();
+                    }
+                }));
+
+        // ========== 等待消息配置 ==========
+        containerEl.createEl('h3', { text: '等待消息配置' });
+
+        new Setting(containerEl)
+            .setName('显示等待消息的延迟')
+            .setDesc('AI 无输出多少毫秒后显示等待消息（100-2000）')
+            .addText(text => text
+                .setPlaceholder('500')
+                .setValue(String(this.plugin.settings.waitingMessageDelay))
+                .onChange(async (value) => {
+                    const num = parseInt(value);
+                    if (!isNaN(num) && num >= 100 && num <= 2000) {
+                        this.plugin.settings.waitingMessageDelay = num;
+                        saveSettingsDebounced();
+                    }
+                }));
+
+        new Setting(containerEl)
+            .setName('等待消息切换间隔')
+            .setDesc('每条等待消息显示完毕后，多少毫秒后切换到下一条（300-2000）')
+            .addText(text => text
+                .setPlaceholder('500')
+                .setValue(String(this.plugin.settings.waitingMessageInterval))
+                .onChange(async (value) => {
+                    const num = parseInt(value);
+                    if (!isNaN(num) && num >= 300 && num <= 2000) {
+                        this.plugin.settings.waitingMessageInterval = num;
+                        saveSettingsDebounced();
+                    }
+                }));
+
+        new Setting(containerEl)
+            .setName('等待消息列表')
+            .setDesc('AI 等待时显示的文字列表，每行一条')
+            .addTextArea(textArea => textArea
+                .setPlaceholder('思考中...\n搜索枯肠中...\n绞尽脑汁中...')
+                .setValue(this.plugin.settings.waitingMessages.join('\n'))
+                .onChange(async (value) => {
+                    const messages = value.split('\n').filter(line => line.trim() !== '');
+                    if (messages.length > 0) {
+                        this.plugin.settings.waitingMessages = messages;
+                        saveSettingsDebounced();
                     }
                 }));
     }

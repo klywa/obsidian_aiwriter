@@ -4,9 +4,6 @@ import { TFile, MarkdownView } from 'obsidian';
 import {
     CheckIcon,
     ChevronDownIcon,
-    LoadingSpinner,
-    PendingIcon,
-    ErrorIcon,
     ToolIcon,
     FileReadIcon,
     FileWriteIcon,
@@ -14,6 +11,7 @@ import {
     TrashIcon,
     FileIcon,
 } from './Icons';
+import { StatusIcon } from './StatusIcon';
 
 interface ToolCallItemProps {
     message: Message;
@@ -35,9 +33,6 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
     // Track if tool has been running for a long time (>1s) to show thinking animation
     const [isLongRunning, setIsLongRunning] = React.useState(false);
 
-    // Track if tool just completed (show completion animation for 500ms)
-    const [isJustCompleted, setIsJustCompleted] = React.useState(false);
-
     React.useEffect(() => {
         const timer = setTimeout(() => setIsNewlyAdded(false), 300);
         return () => clearTimeout(timer);
@@ -53,16 +48,6 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
             return undefined;
         }
     }, [isRunning]);
-
-    // Trigger completion animation when status changes to completed
-    React.useEffect(() => {
-        if (isCompleted && !isJustCompleted) {
-            setIsJustCompleted(true);
-            const timer = setTimeout(() => setIsJustCompleted(false), 500);
-            return () => clearTimeout(timer);
-        }
-        return undefined;
-    }, [isCompleted, isJustCompleted]);
 
     // Get the appropriate tool icon
     const getToolIcon = () => {
@@ -82,20 +67,6 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
             default:
                 return <ToolIcon size={16} />;
         }
-    };
-
-    // Get the appropriate status icon
-    const getStatusIcon = () => {
-        if (isRunning) {
-            return <LoadingSpinner size={14} />;
-        }
-        if (isCompleted) {
-            return <CheckIcon size={14} />;
-        }
-        if (isFailed) {
-            return <ErrorIcon size={14} />;
-        }
-        return <PendingIcon size={14} />;
     };
 
     // Get the status color
@@ -285,24 +256,8 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
                     padding: '10px 12px',
                 }}
             >
-                {/* Status Icon */}
-                <div
-                    className={`voyaru-tool-status ${status}`}
-                    style={{
-                        width: '18px',
-                        height: '18px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                        color: getStatusColor(),
-                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                        transform: isJustCompleted ? 'scale(1.3)' : (status === 'completed' ? 'scale(1.15)' : 'scale(1)'),
-                        filter: isJustCompleted ? 'drop-shadow(0 0 4px var(--text-success))' : 'none',
-                    }}
-                >
-                    {getStatusIcon()}
-                </div>
+                {/* Status Icon - using unified StatusIcon component */}
+                <StatusIcon status={status} size={16} />
 
                 {/* Tool Icon */}
                 <div
@@ -315,8 +270,6 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
                         justifyContent: 'center',
                         flexShrink: 0,
                         color: getStatusColor(),
-                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                        transform: isJustCompleted ? 'scale(1.1)' : 'scale(1)',
                     }}
                 >
                     {getToolIcon()}

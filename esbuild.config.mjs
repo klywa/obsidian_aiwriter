@@ -36,7 +36,7 @@ const context = await esbuild.context({
 	target: "es2018",
 	logLevel: "info",
 	sourcemap: prod ? false : "inline",
-	treeShaking: true,
+	treeShaking: false,  // 禁用以确保 WaitingMessage 和 StatusIcon 组件被正确打包
 	outfile: "main.js",
 	minify: prod,
 });
