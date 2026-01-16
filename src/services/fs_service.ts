@@ -279,5 +279,136 @@ export class FSService {
          console.log(`📂 Found ${files.length} files in ${folderPath}`);
          return files;
     }
+
+    /**
+     * Extract random sentences from chapter files for waiting messages
+     * @param chaptersFolderPath - Path to chapters folder
+     * @param maxSentences - Maximum number of sentences to extract (default: 20)
+     * @param minSentenceLength - Minimum sentence length in characters (default: 5)
+     * @param maxSentenceLength - Maximum sentence length in characters (default: 100)
+     * @returns Array of random sentences from chapter files
+     */
+    async extractRandomSentencesFromChapters(
+        chaptersFolderPath: string,
+        maxSentences: number = 20,
+        minSentenceLength: number = 5,
+        maxSentenceLength: number = 100
+    ): Promise<string[]> {
+        const sentences: string[] = [];
+
+        try {
+            // Get ALL files recursively from chapters folder (including subdirectories)
+            const filePaths = await this.listFilesRecursive(chaptersFolderPath);
+
+            if (filePaths.length === 0) {
+                console.warn('[FSService] No files found in chapters folder:', chaptersFolderPath);
+                return sentences;
+            }
+
+            console.log(`[FSService] Found ${filePaths.length} files in chapters folder`);
+
+            // Convert file paths to TFile objects
+            const files: TFile[] = [];
+            for (const path of filePaths) {
+                const file = this.app.vault.getAbstractFileByPath(normalizePath(path));
+                if (file instanceof TFile) {
+                    files.push(file);
+                }
+            }
+
+            // Read content from up to 5 random files to avoid excessive file reading
+            const maxFilesToRead = Math.min(files.length, 5);
+            const shuffledFiles = [...files].sort(() => Math.random() - 0.5);
+            const selectedFiles = shuffledFiles.slice(0, maxFilesToRead);
+
+            console.log(`[FSService] Reading ${selectedFiles.length} random files for sentence extraction`);
+
+            // Chinese sentence terminators - we need to preserve closing quotes
+            const sentenceTerminators = /[。！？…”]/g;
+
+            for (const file of selectedFiles) {
+                try {
+                    const content = await this.app.vault.read(file);
+                    console.log(`[FSService] Processing file: ${file.path}, content length: ${content.length}`);
+
+                    // Extract sentences with proper quote handling - process line by line
+                    const extractedSentences: string[] = [];
+                    const lines = content.split('\n');
+
+                    for (const line of lines) {
+                        // Skip empty lines (whitespace only) - they act as sentence separators
+                        if (!line.trim()) {
+                            continue;
+                        }
+
+                        let lastIndex = 0;
+                        let match;
+                        sentenceTerminators.lastIndex = 0;
+
+                        while ((match = sentenceTerminators.exec(line)) !== null) {
+                            let endIndex = match.index + 1; // Include the terminator
+
+                            // Check if followed by closing quotes (Chinese or English)
+                            const remaining = line.slice(endIndex);
+                            const quoteMatch = remaining.match(/^(['""」』])/);
+
+                            if (quoteMatch && quoteMatch[1]) {
+                                endIndex += quoteMatch[1].length; // Include the closing quote
+                                sentenceTerminators.lastIndex = endIndex;
+                            }
+
+                            const sentence = line.slice(lastIndex, endIndex).trim();
+                            if (sentence) {
+                                extractedSentences.push(sentence);
+                            }
+                            lastIndex = endIndex;
+                        }
+
+                        // Add any remaining content on this line
+                        if (lastIndex < line.length) {
+                            const remaining = line.slice(lastIndex).trim();
+                            if (remaining) {
+                                extractedSentences.push(remaining);
+                            }
+                        }
+                    }
+
+                    console.log(`[FSService] Extracted ${extractedSentences.length} raw sentences from ${file.path}`);
+
+                    // Filter and clean sentences
+                    const cleanedSentences = extractedSentences
+                        .filter(s => {
+                            const length = s.length;
+                            return length >= minSentenceLength && length <= maxSentenceLength;
+                        })
+                        .map(s => {
+                            // Add ellipsis for continuity if not already ending with one
+                            return s + (s.endsWith('…') ? '' : '…');
+                        });
+
+                    console.log(`[FSService] After filtering (length ${minSentenceLength}-${maxSentenceLength}): ${cleanedSentences.length} sentences`);
+                    sentences.push(...cleanedSentences);
+
+                    // Stop if we have enough sentences
+                    if (sentences.length >= maxSentences) {
+                        break;
+                    }
+                } catch (error) {
+                    console.error(`[FSService] Failed to read file ${file.path}:`, error);
+                    // Continue with next file
+                }
+            }
+
+            console.log(`[FSService] Total sentences extracted: ${sentences.length}`);
+
+            // Shuffle and limit to maxSentences
+            const shuffledSentences = sentences.sort(() => Math.random() - 0.5);
+            return shuffledSentences.slice(0, maxSentences);
+
+        } catch (error) {
+            console.error('[FSService] Error extracting sentences from chapters:', error);
+            return sentences;
+        }
+    }
 }
 

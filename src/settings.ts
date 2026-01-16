@@ -111,6 +111,7 @@ export interface VoyaruSettings {
     waitingMessageDelay: number;      // 显示等待消息前的延迟（毫秒）
     waitingMessageInterval: number;   // 等待消息切换间隔（毫秒）
     waitingMessages: string[];        // 预设等待文字列表
+    useProjectContentAsWaitingMessages: boolean;  // 使用项目内容作为等待消息
 }
 
 // Note: DEFAULT_TOOLS and DEFAULT_POST_CHECK_ITEMS are now loaded from prompts.json
@@ -169,7 +170,7 @@ export const DEFAULT_SETTINGS: VoyaruSettings = {
 
     // 等待消息配置
     waitingMessageDelay: 0,  // 改为0表示立即显示等待消息（原来500ms延迟可能导致来不及显示）
-    waitingMessageInterval: 500,
+    waitingMessageInterval: 1000,
     waitingMessages: [
         "思考中...",
         "搜索枯肠中...",
@@ -178,7 +179,8 @@ export const DEFAULT_SETTINGS: VoyaruSettings = {
         "正在削铅笔...",
         "组织语言中...",
         "灵感涌现中..."
-    ]
+    ],
+    useProjectContentAsWaitingMessages: false  // 使用项目内容作为等待消息
 };
 
 export class VoyaruSettingTab extends PluginSettingTab {
@@ -466,6 +468,20 @@ export class VoyaruSettingTab extends PluginSettingTab {
                     if (messages.length > 0) {
                         this.plugin.settings.waitingMessages = messages;
                         saveSettingsDebounced();
+                    }
+                }));
+
+        new Setting(containerEl)
+            .setName('使用项目内容作为等待消息')
+            .setDesc('开启后，等待消息将从章节文件夹中随机抽取句子，而非使用预设文字')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.useProjectContentAsWaitingMessages ?? false)
+                .onChange(async (value) => {
+                    this.plugin.settings.useProjectContentAsWaitingMessages = value;
+                    await this.plugin.saveSettings();
+                    // Refresh chapter sentences when toggled
+                    if (value) {
+                        await this.plugin.refreshWaitingMessagesFromChapters();
                     }
                 }));
     }

@@ -2653,6 +2653,22 @@ Design Tokens are imported first to establish the design system foundation.
     font-style: italic;
 }
 
+/* Typewriter cursor effect for waiting messages */
+.voyaru-waiting-message-text .voyaru-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    background-color: var(--text-muted);
+    margin-left: 2px;
+    animation: voyaru-cursor-blink 1s step-end infinite;
+    vertical-align: text-bottom;
+}
+
+@keyframes voyaru-cursor-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
 /* Waiting Message Fade Animations */
 @keyframes voyaru-waiting-fade-in {
     from {

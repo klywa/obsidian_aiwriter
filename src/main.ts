@@ -15,6 +15,11 @@ export default class VoyaruPlugin extends Plugin {
     localEditStatusModal: LocalEditStatusModal | null = null;
     private localEditAbortController: AbortController | null = null;
 
+    // Cached waiting messages from chapters
+    private cachedChapterSentences: string[] = [];
+    private lastSentencesRefreshTime: number = 0;
+    private readonly SENTENCES_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 	async onload() {
 		await this.loadSettings();
 
@@ -34,6 +39,11 @@ export default class VoyaruPlugin extends Plugin {
         }
 
         this.aiService = new AIService(this.settings, this.fsService, this.promptService);
+
+        // Initialize chapter sentences if setting is enabled
+        if (this.settings.useProjectContentAsWaitingMessages) {
+            await this.refreshWaitingMessagesFromChapters();
+        }
 
         // Register View
         this.registerView(
@@ -184,6 +194,60 @@ export default class VoyaruPlugin extends Plugin {
             }
         }));
 	}
+
+    /**
+     * Refresh waiting messages from chapter files
+     * Called when: plugin loads, setting toggled, or cache expires
+     */
+    async refreshWaitingMessagesFromChapters(): Promise<void> {
+        const now = Date.now();
+        const timeSinceLastRefresh = now - this.lastSentencesRefreshTime;
+
+        // Check if we need to refresh (cache duration passed or forced refresh)
+        if (timeSinceLastRefresh < this.SENTENCES_CACHE_DURATION && this.cachedChapterSentences.length > 0) {
+            console.log('[VoyaruPlugin] Using cached chapter sentences');
+            return;
+        }
+
+        console.log('[VoyaruPlugin] Refreshing waiting messages from chapters...');
+
+        try {
+            const chaptersFolder = this.settings.folders?.chapters || 'Chapters';
+            const sentences = await this.fsService.extractRandomSentencesFromChapters(
+                chaptersFolder,
+                20,  // max sentences
+                5,   // min length
+                100  // max length
+            );
+
+            if (sentences.length > 0) {
+                this.cachedChapterSentences = sentences;
+                this.lastSentencesRefreshTime = now;
+                console.log(`[VoyaruPlugin] Refreshed ${sentences.length} sentences from chapters`);
+            } else {
+                console.warn('[VoyaruPlugin] No sentences extracted from chapters, using presets');
+                this.cachedChapterSentences = [];
+            }
+        } catch (error) {
+            console.error('[VoyaruPlugin] Error refreshing waiting messages:', error);
+            this.cachedChapterSentences = [];
+        }
+    }
+
+    /**
+     * Get current waiting messages (either from chapters or presets)
+     */
+    getWaitingMessages(): string[] {
+        const useProjectContent = this.settings.useProjectContentAsWaitingMessages ?? false;
+
+        if (useProjectContent && this.cachedChapterSentences.length > 0) {
+            console.log('[VoyaruPlugin] Using chapter sentences for waiting messages');
+            return this.cachedChapterSentences;
+        }
+
+        console.log('[VoyaruPlugin] Using preset waiting messages');
+        return this.settings.waitingMessages || ['思考中...'];
+    }
 
 	async onunload() {
         if (this.localEditStatusModal) {

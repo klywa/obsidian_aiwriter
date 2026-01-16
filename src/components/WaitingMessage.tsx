@@ -1,17 +1,18 @@
 import * as React from 'react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { TypewriterText } from './TypewriterText';
 
 interface WaitingMessageProps {
     /** 预设等待文字列表 */
     messages: string[];
     /** 每条消息显示完后的等待间隔（毫秒） */
     interval: number;
-    /** 打字机效果速度（字符/秒），默认 30 */
-    typingSpeed?: number;
     /** 是否可见（用于控制淡入淡出） */
     isVisible: boolean;
     /** 淡出动画完成后的回调 */
     onFadeOutComplete?: () => void;
+    /** 打字机效果速度（字符/秒），默认 30 */
+    typingSpeed?: number;
 }
 
 /**
@@ -28,32 +29,27 @@ export const WaitingMessage: React.FC<WaitingMessageProps> = ({
     messages,
     interval,
     isVisible,
-    onFadeOutComplete
+    onFadeOutComplete,
+    typingSpeed = 30
 }) => {
-    // 调试日志
-    console.log('[WaitingMessage Component] Render called with props:', { messages, interval, isVisible });
-
     const [currentIndex, setCurrentIndex] = useState(0);
     const [isExiting, setIsExiting] = useState(false);
+    const [shouldAnimateTypewriter, setShouldAnimateTypewriter] = useState(false);
+    const [typewriterCompleted, setTypewriterCompleted] = useState(false);
     const fadeOutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const messageSwitchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // 确保有有效的消息列表
     const validMessages = messages.length > 0 ? messages : ['思考中...'];
     const currentMessage = validMessages[currentIndex % validMessages.length] ?? '思考中...';
 
-    console.log('[WaitingMessage Component] Current state:', { currentIndex, isExiting, currentMessage });
-
     // 处理可见性变化（触发淡出）
     useEffect(() => {
         if (!isVisible && !isExiting) {
-            console.log('[WaitingMessage Component] Starting exit animation');
             setIsExiting(true);
-
-            // 等待淡出动画完成后回调
             fadeOutTimerRef.current = setTimeout(() => {
-                console.log('[WaitingMessage Component] Exit animation complete, calling callback');
                 onFadeOutComplete?.();
-            }, 300); // 与 CSS 动画时长匹配
+            }, 300);
         }
 
         return () => {
@@ -63,30 +59,59 @@ export const WaitingMessage: React.FC<WaitingMessageProps> = ({
         };
     }, [isVisible, isExiting, onFadeOutComplete]);
 
-    // 简单的消息切换（不使用打字机效果）
+    // 启动打字机效果（延迟一小段时间确保组件已渲染）
     useEffect(() => {
-        if (!isExiting) {
-            const timer = setTimeout(() => {
-                setCurrentIndex(prev => (prev + 1) % validMessages.length);
-            }, interval);
+        if (isVisible && !isExiting) {
+            setTypewriterCompleted(false);
+            const startDelay = setTimeout(() => {
+                setShouldAnimateTypewriter(true);
+            }, 50);
 
-            return () => clearTimeout(timer);
+            return () => clearTimeout(startDelay);
         }
         return undefined;
-    }, [currentIndex, interval, validMessages.length, isExiting]);
+    }, [isVisible, isExiting, currentIndex]);
+
+    // 处理消息切换（在打字机完成后）
+    useEffect(() => {
+        if (!isExiting && typewriterCompleted) {
+            messageSwitchTimerRef.current = setTimeout(() => {
+                setCurrentIndex(prev => (prev + 1) % validMessages.length);
+                setTypewriterCompleted(false);
+                setShouldAnimateTypewriter(false);
+            }, interval);
+
+            return () => {
+                if (messageSwitchTimerRef.current) {
+                    clearTimeout(messageSwitchTimerRef.current);
+                }
+            };
+        }
+        return undefined;
+    }, [typewriterCompleted, interval, validMessages.length, isExiting]);
+
+    const handleTypewriterComplete = useCallback(() => {
+        setTypewriterCompleted(true);
+    }, []);
 
     const containerClass = `voyaru-waiting-message ${isExiting ? 'voyaru-waiting-message--exiting' : ''}`;
 
-    console.log('[WaitingMessage Component] About to render JSX with message:', currentMessage);
-
-    // 简化版本：只显示纯文本，不依赖其他组件
     return (
         <div className={containerClass}>
             <span style={{ display: 'inline-block', width: '18px', height: '18px' }}>
                 ⏳
             </span>
             <span className="voyaru-waiting-message-text">
-                {currentMessage}
+                {shouldAnimateTypewriter ? (
+                    <TypewriterText
+                        text={currentMessage}
+                        isStreaming={true}
+                        speed={typingSpeed}
+                        onComplete={handleTypewriterComplete}
+                    />
+                ) : (
+                    <span>{currentMessage}</span>
+                )}
             </span>
         </div>
     );

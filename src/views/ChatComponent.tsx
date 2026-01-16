@@ -111,6 +111,13 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         console.log('[WaitingMessage] Timestamp:', Date.now());
     }, [showWaitingMessage]);
 
+    // Refresh waiting messages from chapters when setting changes
+    useEffect(() => {
+        if (plugin.settings.useProjectContentAsWaitingMessages) {
+            plugin.refreshWaitingMessagesFromChapters();
+        }
+    }, [plugin.settings.useProjectContentAsWaitingMessages, plugin.settings.folders?.chapters]);
+
     // 加载保存的sessions和当前选中的session
     useEffect(() => {
         const loadSessions = async () => {
@@ -2541,8 +2548,9 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                 {/* 等待消息 - AI 响应延迟时显示 */}
                 {showWaitingMessage && (
                     <WaitingMessage
-                        messages={plugin.settings.waitingMessages || ['思考中...']}
+                        messages={plugin.getWaitingMessages()}
                         interval={plugin.settings.waitingMessageInterval || 500}
+                        typingSpeed={30}
                         isVisible={true}
                         onFadeOutComplete={() => setShowWaitingMessage(false)}
                     />
