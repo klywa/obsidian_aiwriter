@@ -1466,7 +1466,10 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             setIsLoading(false);
             setStreamingTextMessageId(null); // 清除流式输出状态
             abortControllerRef.current = null;
-            // 清除等待消息状态
+
+            // 响应完成后，隐藏等待消息
+            // 注意：操作类消息执行期间显示等待消息的逻辑在chunk处理循环中（第1433行）
+            console.log('[WaitingMessage] Response completed, hiding waiting message');
             setShowWaitingMessage(false);
             // 确保最终状态被保存（通过 useEffect 自动触发保存）
         }
