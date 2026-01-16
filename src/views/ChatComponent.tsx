@@ -1062,14 +1062,6 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         console.log('[WaitingMessage] Showing waiting message immediately');
         console.log('[WaitingMessage] Current timestamp:', Date.now());
         setShowWaitingMessage(true);
-        // 添加等待消息到 messages 数组
-        const waitingMsg: Message = {
-            role: 'model',
-            content: '',
-            type: 'waiting',
-            id: `msg-${Date.now()}-waiting`
-        };
-        setMessages(prev => [...prev, waitingMsg]);
         console.log('[WaitingMessage] State update scheduled');
 
         // 更新当前session的消息（在发送时）
@@ -1247,9 +1239,6 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                         console.log('[WaitingMessage] First text chunk received, clearing waiting message');
                         waitingMessageClearedRef.current = true;
 
-                        // 从 messages 数组中移除等待消息
-                        setMessages(prev => prev.filter(m => m.type !== 'waiting'));
-
                         // 检查等待消息显示了多久
                         const elapsed = Date.now() - waitingMessageStartTime;
                         const minDisplayTime = 100; // 最小显示时间 100ms
@@ -1419,6 +1408,11 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                         currentResponseContent = "";
                         // 更新流式输出的消息ID
                         setStreamingTextMessageId(currentResponseId);
+
+                        // 重新显示等待消息（因为工具调用完成或非文本chunk处理完毕，等待新文本）
+                        console.log('[WaitingMessage] Non-text chunk processed, showing waiting message again');
+                        setShowWaitingMessage(true);
+                        waitingMessageClearedRef.current = false; // 重置清除标志
                     }
                 }
             }
@@ -1863,18 +1857,6 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         // Render Tool Call Items
         if (m.type === 'tool_result') {
             return <ToolCallItem key={m.id} message={m} onToggleExpand={handleToggleToolExpand} plugin={plugin} />;
-        }
-
-        // Render Waiting Message
-        if (m.type === 'waiting') {
-            return (
-                <WaitingMessage
-                    key={m.id}
-                    messages={plugin.settings.waitingMessages || ['思考中...']}
-                    interval={plugin.settings.waitingMessageInterval || 500}
-                    isVisible={true}
-                />
-            );
         }
 
         // Normal Message (Text, Thinking, Error)
@@ -2539,6 +2521,16 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                         </div>
                     </div>
                 ))}
+
+                {/* 等待消息 - AI 响应延迟时显示 */}
+                {showWaitingMessage && (
+                    <WaitingMessage
+                        messages={plugin.settings.waitingMessages || ['思考中...']}
+                        interval={plugin.settings.waitingMessageInterval || 500}
+                        isVisible={true}
+                        onFadeOutComplete={() => setShowWaitingMessage(false)}
+                    />
+                )}
 
                 <div ref={messagesEndRef} />
                 {/* 底部占位空间，动态计算以防止过度滚动 */}

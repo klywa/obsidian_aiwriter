@@ -25,7 +25,7 @@ export type MessageStatus = 'pending' | 'running' | 'completed' | 'failed' | 'ca
 export interface Message {
     role: 'user' | 'model' | 'system' | 'error';
     content: string;
-    type?: 'text' | 'thinking' | 'tool_result' | 'waiting';
+    type?: 'text' | 'thinking' | 'tool_result';
     tool?: string;
     toolData?: {
         args?: any;
