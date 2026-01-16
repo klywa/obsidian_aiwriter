@@ -48,6 +48,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const [streamingTextMessageId, setStreamingTextMessageId] = useState<string | null>(null); // 追踪正在流式输出的文本消息ID
     const [showWaitingMessage, setShowWaitingMessage] = useState(false); // 等待消息状态（简化版）
     const waitingMessageClearedRef = useRef(false); // 跟踪等待消息是否已被清除（只在收到 text chunk 时清除）
+    const hasReceivedPriorTextRef = useRef(false); // 跟踪在此前是否已经收到过文本（用于判断是否应该重新显示等待消息）
 
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -1057,6 +1058,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
 
         // 重置等待消息清除标志
         waitingMessageClearedRef.current = false;
+        hasReceivedPriorTextRef.current = false; // 重置文本接收标志
 
         // 立即显示等待消息（不使用定时器，避免竞态条件）
         console.log('[WaitingMessage] Showing waiting message immediately');
@@ -1238,6 +1240,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     if (!waitingMessageClearedRef.current) {
                         console.log('[WaitingMessage] First text chunk received, clearing waiting message');
                         waitingMessageClearedRef.current = true;
+                        hasReceivedPriorTextRef.current = true; // 标记已经收到过文本
 
                         // 检查等待消息显示了多久
                         const elapsed = Date.now() - waitingMessageStartTime;
@@ -1399,7 +1402,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     
                     // If we interrupted a text stream (meaning we had content), or if we just had a tool call,
                     // we want the NEXT text chunk to start a NEW message bubble.
-                    // But if currentResponseContent was empty, we can reuse the ID? 
+                    // But if currentResponseContent was empty, we can reuse the ID?
                     // No, safe to just always rotate ID after an interruption to ensure strict ordering.
                     // Exception: history_update shouldn't break text flow?
                     // Actually history_update usually comes at the end.
@@ -1409,10 +1412,15 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                         // 更新流式输出的消息ID
                         setStreamingTextMessageId(currentResponseId);
 
-                        // 重新显示等待消息（因为工具调用完成或非文本chunk处理完毕，等待新文本）
-                        console.log('[WaitingMessage] Non-text chunk processed, showing waiting message again');
-                        setShowWaitingMessage(true);
-                        waitingMessageClearedRef.current = false; // 重置清除标志
+                        // 只有在之前没有收到过文本的情况下才重新显示等待消息
+                        // 如果已经收到过文本，说明是"文本→工具调用"的情况，不应该重新显示等待消息
+                        if (!hasReceivedPriorTextRef.current) {
+                            console.log('[WaitingMessage] Non-text chunk processed (no prior text), showing waiting message again');
+                            setShowWaitingMessage(true);
+                            waitingMessageClearedRef.current = false; // 重置清除标志
+                        } else {
+                            console.log('[WaitingMessage] Non-text chunk processed (has prior text), NOT showing waiting message');
+                        }
                     }
                 }
             }
