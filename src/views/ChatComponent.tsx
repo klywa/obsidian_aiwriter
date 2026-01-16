@@ -49,6 +49,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const [showWaitingMessage, setShowWaitingMessage] = useState(false); // 等待消息状态（简化版）
     const waitingMessageClearedRef = useRef(false); // 跟踪等待消息是否已被清除（只在收到 text chunk 时清除）
     const hasReceivedPriorTextRef = useRef(false); // 跟踪在此前是否已经收到过文本（用于判断是否应该重新显示等待消息）
+    const lastChunkTypeRef = useRef<string | null>(null); // 跟踪上一个chunk的类型（用于判断"文字→工具调用"的情况）
 
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -1059,6 +1060,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         // 重置等待消息清除标志
         waitingMessageClearedRef.current = false;
         hasReceivedPriorTextRef.current = false; // 重置文本接收标志
+        lastChunkTypeRef.current = null; // 重置chunk类型跟踪
 
         // 立即显示等待消息（不使用定时器，避免竞态条件）
         console.log('[WaitingMessage] Showing waiting message immediately');
@@ -1263,6 +1265,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     // Normal text accumulation
                     currentResponseContent += chunk.content;
                     scheduleUpdate(currentResponseId, currentResponseContent);
+                    lastChunkTypeRef.current = 'text'; // 标记上一个chunk是文本
                 } else {
                     // For ANY non-text chunk (Thinking, Tool Result, Error, etc.)
                     // First, ensure any pending text updates are finalized so the order is preserved
@@ -1412,14 +1415,19 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                         // 更新流式输出的消息ID
                         setStreamingTextMessageId(currentResponseId);
 
-                        // 只有在之前没有收到过文本的情况下才重新显示等待消息
-                        // 如果已经收到过文本，说明是"文本→工具调用"的情况，不应该重新显示等待消息
-                        if (!hasReceivedPriorTextRef.current) {
-                            console.log('[WaitingMessage] Non-text chunk processed (no prior text), showing waiting message again');
+                        // 检查上一个chunk是否是文本（判断是否是"文字→工具调用"的情况）
+                        const wasText = lastChunkTypeRef.current === 'text';
+                        lastChunkTypeRef.current = chunk.type; // 更新当前chunk类型
+
+                        // 重新显示等待消息的条件：
+                        // 1. 之前没有收到过文本（工具调用在文本前）
+                        // 2. 或者上一个chunk是文本（文字输出完毕，现在要等待工具调用）
+                        if (!hasReceivedPriorTextRef.current || wasText) {
+                            console.log('[WaitingMessage] Non-text chunk processed, showing waiting message again (wasText:', wasText, ')');
                             setShowWaitingMessage(true);
                             waitingMessageClearedRef.current = false; // 重置清除标志
                         } else {
-                            console.log('[WaitingMessage] Non-text chunk processed (has prior text), NOT showing waiting message');
+                            console.log('[WaitingMessage] Non-text chunk processed, NOT showing waiting message');
                         }
                     }
                 }
