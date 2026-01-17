@@ -2635,11 +2635,11 @@ Design Tokens are imported first to establish the design system foundation.
     padding: 10px 14px;
     background-color: var(--background-secondary);
     border: 1px solid var(--background-modifier-border);
-    border-radius: 20px;
+    border-radius: 8px;
     margin: 8px 0 0 0;
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
     animation: voyaru-waiting-fade-in 0.3s ease-out;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
@@ -2652,8 +2652,17 @@ Design Tokens are imported first to establish the design system foundation.
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--interactive-accent);
-    animation: voyaru-sparkle-pulse 3s ease-in-out infinite;
+    width: 8px;
+    height: 8px;
+    padding: 0;
+}
+
+.voyaru-waiting-dot {
+    width: 8px;
+    height: 8px;
+    background-color: var(--interactive-accent);
+    border-radius: 50%;
+    animation: voyaru-breathe 2s ease-in-out infinite;
 }
 
 .voyaru-waiting-message-text {
@@ -2702,10 +2711,8 @@ Design Tokens are imported first to establish the design system foundation.
     }
 }
 
-@keyframes voyaru-sparkle-pulse {
-    0% { transform: scale(1) rotate(0deg); opacity: 0.8; }
-    25% { transform: scale(1.1) rotate(5deg); opacity: 1; }
-    50% { transform: scale(0.95) rotate(0deg); opacity: 0.8; }
-    75% { transform: scale(1.1) rotate(-5deg); opacity: 1; }
-    100% { transform: scale(1) rotate(0deg); opacity: 0.8; }
+@keyframes voyaru-breathe {
+    0% { transform: scale(0.6); opacity: 0.5; }
+    50% { transform: scale(1); opacity: 1; }
+    100% { transform: scale(0.6); opacity: 0.5; }
 }

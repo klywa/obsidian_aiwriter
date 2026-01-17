@@ -2,14 +2,7 @@ import * as React from 'react';
 import { Message } from '../settings';
 import { TFile, MarkdownView } from 'obsidian';
 import {
-    CheckIcon,
     ChevronDownIcon,
-    ToolIcon,
-    FileReadIcon,
-    FileWriteIcon,
-    FileEditIcon,
-    TrashIcon,
-    FileIcon,
 } from './Icons';
 import { StatusIcon } from './StatusIcon';
 
@@ -48,34 +41,6 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
             return undefined;
         }
     }, [isRunning]);
-
-    // Get the appropriate tool icon
-    const getToolIcon = () => {
-        switch (message.tool) {
-            case 'readFile':
-                return <FileReadIcon size={16} />;
-            case 'writeFile':
-                return <FileWriteIcon size={16} />;
-            case 'editFile':
-                return <FileEditIcon size={16} />;
-            case 'deleteFile':
-                return <TrashIcon size={16} />;
-            case 'listFiles':
-                return <FileIcon size={16} />;
-            case 'postCheck':
-                return <CheckIcon size={16} />;
-            default:
-                return <ToolIcon size={16} />;
-        }
-    };
-
-    // Get the status color
-    const getStatusColor = () => {
-        if (isFailed) return 'var(--text-error)';
-        if (isCompleted) return 'var(--text-success)';
-        if (isRunning) return 'var(--interactive-accent)';
-        return 'var(--text-muted)';
-    };
 
     // Get the tool description based on tool type and status
     const getToolDescription = () => {
@@ -252,28 +217,12 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
                 style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '8px',
-                    padding: '10px 12px',
+                    gap: '12px',
+                    padding: '10px 14px',
                 }}
             >
                 {/* Status Icon - using unified StatusIcon component */}
-                <StatusIcon status={status} size={16} />
-
-                {/* Tool Icon */}
-                <div
-                    className="voyaru-tool-icon"
-                    style={{
-                        width: '18px',
-                        height: '18px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                        color: getStatusColor(),
-                    }}
-                >
-                    {getToolIcon()}
-                </div>
+                <StatusIcon status={status} size={8} />
 
                 {/* Description */}
                 <div
@@ -352,7 +301,7 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
                 <div style={{
                     position: 'absolute',
                     top: '50%',
-                    left: '44px', // After status icon (18px) + tool icon (18px) + gaps
+                    left: '32px', // Adjusted for removed tool icon
                     transform: 'translateY(-50%)',
                     display: 'flex',
                     gap: '4px',

@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { TypewriterText } from './TypewriterText';
-import { SparklesIcon } from './Icons';
 
 interface WaitingMessageProps {
     /** 预设等待文字列表 */
@@ -100,7 +99,7 @@ export const WaitingMessage: React.FC<WaitingMessageProps> = ({
     return (
         <div className={containerClass}>
             <span className="voyaru-waiting-icon">
-                <SparklesIcon size={16} />
+                <div className="voyaru-waiting-dot" />
             </span>
             <span className="voyaru-waiting-message-text">
                 {shouldAnimateTypewriter ? (
