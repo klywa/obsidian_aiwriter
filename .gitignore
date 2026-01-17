@@ -23,3 +23,5 @@ data.json
 
 docs/*.md
 docs
+
+dist
