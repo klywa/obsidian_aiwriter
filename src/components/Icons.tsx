@@ -98,6 +98,15 @@ export const ToolIcon = ({ size = 16, style, className }: IconProps) => (
     </svg>
 );
 
+export const SparklesIcon = ({ size = 18, style, className }: IconProps) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" style={style} className={className}>
+        <path d="M9.8 12.65c.4.4.4 1.1 0 1.5l-3.32 3.32a3.56 3.56 0 0 1-5.04-5.04l3.32-3.32c.4-.4 1.1-.4 1.5 0l3.54 3.54Z" opacity="0"/>
+        <path d="m19 2 1.54 4.11L24 7.5l-3.46 1.39L19 13l-1.54-4.11L14 7.5l3.46-1.39L19 2Z" />
+        <path d="m10 5 1.13 2.25L14 8l-2.87.75L10 11 8.87 8.75 6 8l2.87-.75L10 5Z" />
+        <path d="m6 16 1.13 2.25L10 19l-2.87.75L6 22l-1.13-2.25L2 19l2.87-.75L6 16Z" />
+    </svg>
+);
+
 export const TrashIcon = ({ size = 16, style, className }: IconProps) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style} className={className}>
         <polyline points="3 6 5 6 21 6"></polyline>
