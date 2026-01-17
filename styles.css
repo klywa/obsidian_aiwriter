@@ -1954,7 +1954,7 @@ Design Tokens are imported first to establish the design system foundation.
 .voyaru-tool-call-item {
     margin-bottom: 8px;
     border-radius: 8px;
-    border: 1px solid var(--background-modifier-border);
+    border: none;
     background-color: var(--background-secondary);
     overflow: hidden;
     transition: all 0.2s ease;
@@ -2634,9 +2634,9 @@ Design Tokens are imported first to establish the design system foundation.
 .voyaru-waiting-message {
     padding: 12px 16px;
     background-color: var(--background-secondary);
-    border: 1px solid var(--background-modifier-border);
+    border: none;
     border-radius: 12px;
-    margin: 8px 16px 16px 16px;
+    margin: 8px 0 0 0;
     display: flex;
     align-items: center;
     gap: 12px;

@@ -2544,20 +2544,20 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                         {/* Content: Model Messages */}
                         <div className="voyaru-qa-content">
                             {group.messages.map((item, i) => renderMessageContent(item, false, i === group.messages.length - 1))}
+                            
+                            {/* 等待消息 - AI 响应延迟时显示 */}
+                            {index === qaGroups.length - 1 && showWaitingMessage && (
+                                <WaitingMessage
+                                    messages={plugin.getWaitingMessages()}
+                                    interval={plugin.settings.waitingMessageInterval || 500}
+                                    typingSpeed={30}
+                                    isVisible={true}
+                                    onFadeOutComplete={() => setShowWaitingMessage(false)}
+                                />
+                            )}
                         </div>
                     </div>
                 ))}
-
-                {/* 等待消息 - AI 响应延迟时显示 */}
-                {showWaitingMessage && (
-                    <WaitingMessage
-                        messages={plugin.getWaitingMessages()}
-                        interval={plugin.settings.waitingMessageInterval || 500}
-                        typingSpeed={30}
-                        isVisible={true}
-                        onFadeOutComplete={() => setShowWaitingMessage(false)}
-                    />
-                )}
 
                 <div ref={messagesEndRef} />
                 {/* 底部占位空间，动态计算以防止过度滚动 */}
