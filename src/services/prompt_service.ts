@@ -114,34 +114,25 @@ export class PromptService {
     constructor(private plugin: VoyaruPlugin) {}
 
     /**
-     * Load and parse prompts.json
+     * Load prompts from embedded DEFAULT_PROMPTS
      * Should be called during plugin initialization
-     * Falls back to embedded DEFAULT_PROMPTS if file is not available
+     *
+     * 核心系统指令始终从代码内嵌的 DEFAULT_PROMPTS 加载，
+     * 确保用户更新插件版本后立即使用最新指令，
+     * 不再从本地 prompts.json 文件读取。
      */
     async loadPrompts(): Promise<void> {
         try {
-            const adapter = this.plugin.app.vault.adapter;
-
-            // Try to read from plugin directory
-            let content: string;
-            try {
-                content = await adapter.read('.obsidian/plugins/obsidian_aiwriter/prompts.json');
-                this.prompts = JSON.parse(content);
-                console.log(`[PromptService] Loaded prompts.json version ${this.prompts?.version}`);
-            } catch (e) {
-                // File not found or read error - use embedded defaults
-                console.log('[PromptService] prompts.json not found, using embedded default prompts');
-                this.prompts = DEFAULT_PROMPTS as any;
-                console.log(`[PromptService] Loaded embedded prompts version ${this.prompts?.version}`);
-            }
+            // 核心系统指令始终从代码内嵌的 DEFAULT_PROMPTS 加载
+            // 确保用户更新插件版本后立即使用最新指令
+            this.prompts = DEFAULT_PROMPTS as unknown as PromptsConfig;
+            console.log(`[PromptService] Loaded embedded prompts version ${this.prompts.version}`);
 
             // Validate structure
             this.validatePromptsStructure();
         } catch (error) {
             console.error('[PromptService] Error loading prompts:', error);
-            // Last resort: use embedded defaults
-            console.log('[PromptService] Using embedded default prompts as fallback');
-            this.prompts = DEFAULT_PROMPTS as any;
+            throw error; // 如果内嵌提示有问题，应该抛出错误而不是静默失败
         }
     }
 

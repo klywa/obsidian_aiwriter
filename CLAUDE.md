@@ -207,40 +207,36 @@ Every AI chat request includes a visual file tree:
 
 ### Overview
 
-All AI prompts are centrally managed in `prompts.json` at the plugin root. This provides:
+所有核心 AI 提示词都**硬编码在代码中**（`src/services/default_prompts.ts`），确保用户更新插件后立即使用最新指令。
 
-- **Single source of truth**: All prompts in one file, easy to find and edit
-- **Version control**: Track prompt changes over time
+- **硬编码策略**: 核心系统指令直接嵌入代码，不从外部文件读取
+- **版本同步**: 用户只需更新 `main.js` 即可获得最新提示词
 - **Internationalization ready**: Supports zh/en structure (currently zh only)
 - **Template support**: Variable substitution for dynamic prompts
-- **Type safety**: Validated structure loaded via PromptService
+- **Type safety**: Validated structure via PromptService
 
-### prompts.json Structure
+### 核心提示词结构 (default_prompts.ts)
 
-```json
-{
-  "version": "1.0.0",
-  "system": {
-    "base": { "zh": "...", "en": null },
-    "jailbreak": { "zh": "...", "en": null, "optional": true, "warning": "..." },
-    "styleGuideInstruction": { "zh": "...", "template": true, "variables": ["styleGuidePath"] },
-    "referenceModeInstruction": { "zh": "..." }
+```typescript
+// src/services/default_prompts.ts
+export const DEFAULT_PROMPTS = {
+  version: "1.0.0",
+  system: {
+    base: { zh: "...", en: null },           // 核心系统指令
+    jailbreak: { zh: "...", optional: true }, // 可选的扩展内容
+    styleGuideInstruction: { zh: "...", template: true },
+    referenceModeInstruction: { zh: "..." }
   },
-  "tools": {
-    "default": [...],
-    "functionDefinitions": { "writeFile": {...}, "readFile": {...}, "deleteFile": {...} }
+  tools: {
+    default: [...],                           // 默认 Agent 工具
+    functionDefinitions: { ... }              // AI 工具定义
   },
-  "postCheck": {
-    "systemPrompt": { "zh": "...", "template": true, "variables": [...] },
-    "userMessage": { "zh": "...", "template": true, "variables": [...] },
-    "defaultItems": [...]
-  },
-  "localEdit": {
-    "systemInstruction": { "zh": "...", "template": true },
-    "userMessage": { "zh": "...", "template": true }
-  }
+  postCheck: { ... },                         // 后置检查提示词
+  localEdit: { ... }                          // 局部编辑提示词
 }
 ```
+
+> **注意**: `prompts.json` 文件仅用于开发参考，运行时不会被读取。
 
 ### PromptService API
 
@@ -267,18 +263,17 @@ promptService.getLocalEditSystemInstruction(basePrompt): string
 promptService.getLocalEditUserMessage(params: LocalEditParams): string
 ```
 
-### Customizing Prompts
+### Customizing Prompts (开发者)
 
-1. **Edit prompts.json**: Modify prompts directly in the file
-2. **Reload plugin**: Changes take effect on next plugin load
-3. **Templates**: Use `${variableName}` syntax for dynamic content
-4. **Optional content**: Set `"optional": true` to make prompts togglable
-5. **Migration**: User customizations in settings are preserved on first load
+1. **修改核心提示词**: 编辑 `src/services/default_prompts.ts`，然后重新构建
+2. **Templates**: Use `${variableName}` syntax for dynamic content
+3. **Optional content**: Set `"optional": true` to make prompts togglable
 
 ### Important Notes
 
+- **硬编码策略**: 核心系统指令存储在 `default_prompts.ts` 中，随代码一起打包。用户更新 `main.js` 后立即生效。
+- **用户自定义**: 用户可以通过设置界面的"自定义提示词"添加个性化指令，这部分保存在 `data.json` 中。
 - **Jailbreak content**: The `system.jailbreak` section contains content designed to bypass safety guidelines. It's marked as optional and should be reviewed carefully.
-- **Settings migration**: On first load after updating, the plugin automatically populates `systemPrompt`, `tools`, and `postCheckItems` from prompts.json if they're empty.
 - **Language fallback**: Currently uses Chinese (zh) with null English placeholders. Falls back to zh if en is not available.
 
 ## Important Settings and Configuration
@@ -358,21 +353,21 @@ Models are defined in `MODELS` constant in `settings.ts`.
 
 ### When Modifying Prompts
 
-1. **For prompt content changes**: Edit `prompts.json` directly
+1. **修改核心提示词**: 编辑 `src/services/default_prompts.ts`
 2. **For new prompt types**:
-   - Add to `prompts.json` structure
+   - Add to `DEFAULT_PROMPTS` structure in `default_prompts.ts`
    - Update `PromptsConfig` interface in `prompt_service.ts`
    - Add getter method in `PromptService` class
    - Update calling code to use new prompt
 3. **For template variables**: Use `${variableName}` syntax in prompt text
-4. **Testing**: Reload plugin to see changes (no rebuild needed for prompt-only changes)
+4. **Testing**: 运行 `npm run build` 重新构建，然后在 Obsidian 中重新加载插件
 
 ## Key File Paths Reference
 
 - **Plugin Entry**: [src/main.ts](src/main.ts) - Plugin lifecycle and command registration
 - **AI Service**: [src/services/ai_service.ts](src/services/ai_service.ts) - Gemini API integration (~1100 lines)
 - **Prompt Service**: [src/services/prompt_service.ts](src/services/prompt_service.ts) - Centralized prompt management (~300 lines)
-- **Prompts Config**: [prompts.json](prompts.json) - All AI prompts in one file (~500 lines)
+- **Default Prompts**: [src/services/default_prompts.ts](src/services/default_prompts.ts) - 核心系统指令（硬编码）
 - **Chat UI**: [src/views/ChatComponent.tsx](src/views/ChatComponent.tsx) - Main React interface (2832 lines)
 - **Settings**: [src/settings.ts](src/settings.ts) - Settings interface and UI
 - **File System**: [src/services/fs_service.ts](src/services/fs_service.ts) - Vault file operations
@@ -430,12 +425,11 @@ Models are defined in `MODELS` constant in `settings.ts`.
 4. Create GitHub release with tag matching version (no `v` prefix)
 5. **Attach the following files to release**:
    - ✅ `manifest.json` - Plugin metadata
-   - ✅ `main.js` - Bundled plugin code
+   - ✅ `main.js` - Bundled plugin code (包含所有核心系统指令)
    - ✅ `styles.css` - Custom styling
-   - ✅ **`prompts.json`** ⚠️ **CRITICAL: Contains editFile tool definition and latest AI prompts**
 6. Update `versions.json` to map plugin version → minimum Obsidian version
 
-**Note**: The `prompts.json` file is essential for the plugin to function properly. It contains the latest AI tool definitions (including `editFile`) and system prompts. While the plugin has fallback prompts embedded in code, users downloading from releases need this file to access the newest features.
+**注意**: 核心系统指令已硬编码在 `main.js` 中，用户只需更新 `main.js` 即可获得最新指令，无需额外下载 `prompts.json`。
 
 ## External Dependencies
 
