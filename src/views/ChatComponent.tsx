@@ -49,7 +49,6 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const [isTypewriterAnimating, setIsTypewriterAnimating] = useState(false); // 追踪打字机动画是否仍在进行
     const lastStreamingMessageIdRef = useRef<string | null>(null); // 保存最后一个流式消息ID，用于打字机动画完成判断
     const [showWaitingMessage, setShowWaitingMessage] = useState(false); // 等待消息状态（简化版）
-    const [waitingMessages, setWaitingMessages] = useState<string[]>([]); // 动态获取的等待消息列表
     const waitingMessageClearedRef = useRef(false); // 跟踪等待消息是否已被清除（只在收到 text chunk 时清除）
     const hasReceivedPriorTextRef = useRef(false); // 跟踪在此前是否已经收到过文本（用于判断是否应该重新显示等待消息）
     const lastChunkTypeRef = useRef<string | null>(null); // 跟踪上一个chunk的类型（用于判断"文字→工具调用"的情况）
@@ -74,15 +73,6 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const userMessageRefs = useRef<Map<string, HTMLDivElement>>(new Map()); // 跟踪用户消息的DOM元素
     
     const [bottomSpacerHeight, setBottomSpacerHeight] = useState<string>('50vh');
-
-    // 刷新等待消息：当 showWaitingMessage 变为 true 时获取新消息
-    useEffect(() => {
-        if (showWaitingMessage) {
-            plugin.getFreshWaitingMessages().then((msgs: string[]) => {
-                setWaitingMessages(msgs);
-            });
-        }
-    }, [showWaitingMessage, plugin]);
 
     // 点击外部关闭模型选择器和编辑框，以及取消删除/清空确认状态
     useEffect(() => {
@@ -2578,11 +2568,11 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                         {/* Content: Model Messages */}
                         <div className="voyaru-qa-content">
                             {group.messages.map((item, i) => renderMessageContent(item, false, i === group.messages.length - 1))}
-                            
+
                             {/* 等待消息 - AI 响应延迟时显示 */}
                             {index === qaGroups.length - 1 && showWaitingMessage && (
                                 <WaitingMessage
-                                    messages={waitingMessages.length > 0 ? waitingMessages : plugin.getWaitingMessages()}
+                                    getNextMessage={() => plugin.getNextWaitingMessage()}
                                     interval={plugin.settings.waitingMessageInterval || 500}
                                     typingSpeed={30}
                                     isVisible={true}

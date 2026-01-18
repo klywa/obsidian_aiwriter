@@ -15,10 +15,16 @@ export default class VoyaruPlugin extends Plugin {
     localEditStatusModal: LocalEditStatusModal | null = null;
     private localEditAbortController: AbortController | null = null;
 
-    // Cached waiting messages from chapters
+    // Cached waiting messages from chapters (legacy, kept for compatibility)
     private cachedChapterSentences: string[] = [];
     private lastSentencesRefreshTime: number = 0;
     private readonly SENTENCES_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+    // Waiting message queue cache (new mechanism)
+    private waitingMessageQueue: string[] = [];  // Sentence queue
+    private readonly WAITING_QUEUE_MIN_SENTENCES = 50;  // Minimum sentences per refresh
+    private readonly WAITING_QUEUE_REFRESH_THRESHOLD = 10;  // Refresh when below this
+    private isWaitingQueueRefreshing: boolean = false;  // Prevent concurrent refreshes
 
 	async onload() {
 		await this.loadSettings();
@@ -196,41 +202,55 @@ export default class VoyaruPlugin extends Plugin {
 	}
 
     /**
-     * Refresh waiting messages from chapter files
-     * Called when: plugin loads, setting toggled, or cache expires
+     * Refresh waiting messages from chapter files (queue-based mechanism)
+     * Called when: plugin loads, setting toggled, or queue needs refilling
      */
     async refreshWaitingMessagesFromChapters(): Promise<void> {
-        const now = Date.now();
-        const timeSinceLastRefresh = now - this.lastSentencesRefreshTime;
-
-        // Check if we need to refresh (cache duration passed or forced refresh)
-        if (timeSinceLastRefresh < this.SENTENCES_CACHE_DURATION && this.cachedChapterSentences.length > 0) {
-            console.log('[VoyaruPlugin] Using cached chapter sentences');
+        // Prevent concurrent refreshes
+        if (this.isWaitingQueueRefreshing) {
             return;
         }
 
-        console.log('[VoyaruPlugin] Refreshing waiting messages from chapters...');
+        // Check if queue needs refilling
+        if (this.waitingMessageQueue.length >= this.WAITING_QUEUE_REFRESH_THRESHOLD) {
+            console.log('[VoyaruPlugin] Waiting queue has enough sentences, skipping refresh');
+            return;
+        }
+
+        this.isWaitingQueueRefreshing = true;
 
         try {
             const chaptersFolder = this.settings.folders?.chapters || 'Chapters';
+            const useProjectContent = this.settings.useProjectContentAsWaitingMessages ?? false;
+
+            if (!useProjectContent) {
+                this.waitingMessageQueue = [];
+                this.isWaitingQueueRefreshing = false;
+                return;
+            }
+
+            console.log('[VoyaruPlugin] Refreshing waiting message queue from chapters...');
+
+            // Extract more sentences for the queue
             const sentences = await this.fsService.extractRandomSentencesFromChapters(
                 chaptersFolder,
-                20,  // max sentences
+                this.WAITING_QUEUE_MIN_SENTENCES,  // max sentences
                 5,   // min length
                 100  // max length
             );
 
             if (sentences.length > 0) {
-                this.cachedChapterSentences = sentences;
-                this.lastSentencesRefreshTime = now;
-                console.log(`[VoyaruPlugin] Refreshed ${sentences.length} sentences from chapters`);
+                // Shuffle and add to queue
+                const shuffled = sentences.sort(() => Math.random() - 0.5);
+                this.waitingMessageQueue.push(...shuffled);
+                console.log(`[VoyaruPlugin] Refreshed waiting queue with ${sentences.length} sentences, queue size: ${this.waitingMessageQueue.length}`);
             } else {
-                console.warn('[VoyaruPlugin] No sentences extracted from chapters, using presets');
-                this.cachedChapterSentences = [];
+                console.warn('[VoyaruPlugin] No sentences extracted from chapters');
             }
         } catch (error) {
-            console.error('[VoyaruPlugin] Error refreshing waiting messages:', error);
-            this.cachedChapterSentences = [];
+            console.error('[VoyaruPlugin] Error refreshing waiting message queue:', error);
+        } finally {
+            this.isWaitingQueueRefreshing = false;
         }
     }
 
@@ -285,6 +305,39 @@ export default class VoyaruPlugin extends Plugin {
 
         console.log('[VoyaruPlugin] Using preset waiting messages');
         return this.settings.waitingMessages || ['思考中...'];
+    }
+
+    /**
+     * Get the next waiting message from the queue
+     * Automatically refreshes the queue when running low
+     */
+    async getNextWaitingMessage(): Promise<string> {
+        const useProjectContent = this.settings.useProjectContentAsWaitingMessages ?? false;
+
+        if (useProjectContent) {
+            // Check if queue needs refresh
+            if (this.waitingMessageQueue.length <= this.WAITING_QUEUE_REFRESH_THRESHOLD && !this.isWaitingQueueRefreshing) {
+                // Async refresh, don't block current retrieval
+                this.refreshWaitingMessagesFromChapters();
+            }
+
+            // Take one from queue
+            if (this.waitingMessageQueue.length > 0) {
+                const message = this.waitingMessageQueue.shift()!;
+                console.log(`[VoyaruPlugin] Retrieved message from queue, remaining: ${this.waitingMessageQueue.length}`);
+                return message;
+            }
+
+            // Queue is empty, sync refresh and wait
+            await this.refreshWaitingMessagesFromChapters();
+            if (this.waitingMessageQueue.length > 0) {
+                return this.waitingMessageQueue.shift()!;
+            }
+        }
+
+        // Fallback: random from preset messages
+        const presetMessages = this.settings.waitingMessages || ['思考中...'];
+        return presetMessages[Math.floor(Math.random() * presetMessages.length)] || '思考中...';
     }
 
 	async onunload() {

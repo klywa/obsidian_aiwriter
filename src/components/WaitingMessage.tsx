@@ -3,8 +3,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { TypewriterText } from './TypewriterText';
 
 interface WaitingMessageProps {
-    /** 预设等待文字列表 */
-    messages: string[];
+    /** 获取下一条消息的回调函数 */
+    getNextMessage: () => Promise<string>;
     /** 每条消息显示完后的等待间隔（毫秒） */
     interval: number;
     /** 是否可见（用于控制淡入淡出） */
@@ -20,28 +20,29 @@ interface WaitingMessageProps {
  *
  * 当 AI 响应延迟时显示的临时消息气泡。
  * 特性：
- * - 使用打字机效果逐字显示预设文字
- * - 一条文字显示完后，等待指定间隔后切换到下一条
- * - 循环播放所有预设文字
+ * - 使用打字机效果逐字显示消息
+ * - 一条文字显示完后，等待指定间隔后获取下一条
+ * - 每次都通过回调获取新的随机消息
  * - 支持淡入淡出动画
  */
 export const WaitingMessage: React.FC<WaitingMessageProps> = ({
-    messages,
+    getNextMessage,
     interval,
     isVisible,
     onFadeOutComplete,
     typingSpeed = 30
 }) => {
-    const [currentIndex, setCurrentIndex] = useState(0);
+    const [currentMessage, setCurrentMessage] = useState<string>('');
     const [isExiting, setIsExiting] = useState(false);
     const [shouldAnimateTypewriter, setShouldAnimateTypewriter] = useState(false);
     const [typewriterCompleted, setTypewriterCompleted] = useState(false);
     const fadeOutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const messageSwitchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // 确保有有效的消息列表
-    const validMessages = messages.length > 0 ? messages : ['思考中...'];
-    const currentMessage = validMessages[currentIndex % validMessages.length] ?? '思考中...';
+    // 获取初始消息
+    useEffect(() => {
+        getNextMessage().then(setCurrentMessage);
+    }, [getNextMessage]);
 
     // 处理可见性变化（触发淡出）
     useEffect(() => {
@@ -70,21 +71,15 @@ export const WaitingMessage: React.FC<WaitingMessageProps> = ({
             return () => clearTimeout(startDelay);
         }
         return undefined;
-    }, [isVisible, isExiting, currentIndex]);
+    }, [isVisible, isExiting, currentMessage]);
 
     // 处理消息切换（在打字机完成后）
     useEffect(() => {
         if (!isExiting && typewriterCompleted) {
-            messageSwitchTimerRef.current = setTimeout(() => {
-                // 随机选择下一条消息（避免连续显示同一条）
-                setCurrentIndex(prev => {
-                    if (validMessages.length <= 1) return 0;
-                    let newIndex;
-                    do {
-                        newIndex = Math.floor(Math.random() * validMessages.length);
-                    } while (newIndex === prev);
-                    return newIndex;
-                });
+            messageSwitchTimerRef.current = setTimeout(async () => {
+                // 每次都调用回调获取新的随机消息
+                const newMessage = await getNextMessage();
+                setCurrentMessage(newMessage);
                 setTypewriterCompleted(false);
                 setShouldAnimateTypewriter(false);
             }, interval);
@@ -96,7 +91,7 @@ export const WaitingMessage: React.FC<WaitingMessageProps> = ({
             };
         }
         return undefined;
-    }, [typewriterCompleted, interval, validMessages.length, isExiting]);
+    }, [typewriterCompleted, interval, isExiting, getNextMessage]);
 
     const handleTypewriterComplete = useCallback(() => {
         setTypewriterCompleted(true);
