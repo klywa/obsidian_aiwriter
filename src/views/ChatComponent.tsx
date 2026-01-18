@@ -958,6 +958,17 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             abortControllerRef.current.abort();
             abortControllerRef.current = null;
             setIsLoading(false);
+            
+            // 立即停止等待消息
+            setShowWaitingMessage(false);
+            
+            // 立即显示生成取消消息
+            setMessages(prev => [...prev, { 
+                role: 'error', 
+                content: "生成已取消", 
+                id: `msg-${Date.now()}-${Math.random()}-cancel`
+            }]);
+
             new Notice("生成已停止");
         }
     };
@@ -1216,7 +1227,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             };
 
             for await (const chunk of stream) {
-                if (abortControllerRef.current?.signal.aborted) break;
+                if (!abortControllerRef.current || abortControllerRef.current.signal.aborted) break;
 
                 // Track running tools by their temporary ID
                 let runningToolId: string | null = null;
@@ -1387,6 +1398,9 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                             }
                         });
                     } else if (chunk.type === 'error') {
+                        // 如果是手动停止（abortControllerRef.current 为 null），或者已经是 aborted 状态，则忽略
+                        if (!abortControllerRef.current || abortControllerRef.current.signal.aborted) return;
+                        
                         console.error('Error chunk received:', chunk.content);
                         setMessages(prev => [...prev, { 
                             role: 'error', 
@@ -1464,7 +1478,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             }
 
         } catch (e: any) {
-            if (e.message === "生成已取消") return;
+            if (!abortControllerRef.current || abortControllerRef.current.signal.aborted || e.message === "生成已取消") return;
             console.error('Error in handleSendMessage:', e);
             const errorMessage = e?.message || e?.toString() || "发生未知错误。";
             setMessages(prev => [...prev, { 
