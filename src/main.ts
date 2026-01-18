@@ -235,6 +235,44 @@ export default class VoyaruPlugin extends Plugin {
     }
 
     /**
+     * Get a fresh batch of random waiting messages
+     * Force refreshes from chapters if enabled
+     */
+    async getFreshWaitingMessages(): Promise<string[]> {
+        const useProjectContent = this.settings.useProjectContentAsWaitingMessages ?? false;
+
+        if (!useProjectContent) {
+            // Preset messages are static, but we can shuffle them
+            const messages = [...(this.settings.waitingMessages || ['思考中...'])];
+            return messages.sort(() => Math.random() - 0.5);
+        }
+
+        // Force refresh from chapters
+        try {
+            const chaptersFolder = this.settings.folders?.chapters || 'Chapters';
+            const sentences = await this.fsService.extractRandomSentencesFromChapters(
+                chaptersFolder,
+                20,  // max sentences
+                5,   // min length
+                100  // max length
+            );
+
+            if (sentences.length > 0) {
+                this.cachedChapterSentences = sentences;
+                this.lastSentencesRefreshTime = Date.now();
+                return sentences;
+            } else {
+                console.warn('[VoyaruPlugin] No sentences extracted from chapters, using presets');
+            }
+        } catch (error) {
+            console.error('[VoyaruPlugin] Error refreshing waiting messages:', error);
+        }
+
+        // Fallback to presets
+        return this.settings.waitingMessages || ['思考中...'];
+    }
+
+    /**
      * Get current waiting messages (either from chapters or presets)
      */
     getWaitingMessages(): string[] {
