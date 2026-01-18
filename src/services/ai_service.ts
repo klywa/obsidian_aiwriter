@@ -11,10 +11,6 @@ export class AIService {
     private activeChats: Map<string, any> = new Map();
     private promptService: PromptService;
 
-    // Retry configuration for empty response workaround
-    private static readonly MAX_RETRIES = 3;
-    private static readonly RETRY_DELAYS = [1000, 2000, 4000]; // Exponential backoff in ms
-
     constructor(settings: VoyaruSettings, fs: FSService, promptService: PromptService) {
         this.settings = settings;
         this.fs = fs;
@@ -200,6 +196,22 @@ export class AIService {
      */
     private estimateTokenCount(text: string): number {
         return Math.ceil(text.length / 4);
+    }
+
+    /**
+     * Get max retry count from settings
+     */
+    private getMaxRetries(): number {
+        return this.settings.maxRetries ?? 3;
+    }
+
+    /**
+     * Get retry delay for a given attempt (exponential backoff)
+     * @param attempt - The attempt number (0-based)
+     * @returns Delay in milliseconds
+     */
+    private getRetryDelay(attempt: number): number {
+        return Math.min(1000 * Math.pow(2, attempt), 8000); // Max 8 seconds
     }
 
     async getProjectFileTree(): Promise<string> {
@@ -714,11 +726,17 @@ export class AIService {
                                this.estimateTokenCount(typeof msgToSend === 'string' ? msgToSend : JSON.stringify(msgToSend));
 
         if (currentModel.includes('gemini-3') || currentModel.includes('gemini-2.5')) {
-            if (estimatedTokens > 10000) {
-                console.warn(`[AIService] Large prompt detected (~${estimatedTokens} tokens). This may trigger empty response bug in ${currentModel}.`);
+            if (estimatedTokens > 20000) {
+                console.warn(`[AIService] Very large prompt detected (~${estimatedTokens} tokens). High risk of API errors.`);
                 yield {
                     type: "thinking",
-                    content: `⚠️ 当前提示词较大 (~${estimatedTokens} tokens)。如果遇到空响应问题，建议：\n1. 切换到 gemini-3-flash 模型\n2. 减少引用的文件\n3. 使用 Server 模式`
+                    content: `⚠️ 当前提示词非常大 (~${estimatedTokens} tokens)，很可能导致 API 错误。\n\n强烈建议：\n1. 切换到 Server 模式（强烈推荐）\n2. 切换到 gemini-3-flash 模型\n3. 减少引用的文件数量\n4. 清空对话历史重新开始`
+                };
+            } else if (estimatedTokens > 10000) {
+                console.warn(`[AIService] Large prompt detected (~${estimatedTokens} tokens). This may trigger API errors.`);
+                yield {
+                    type: "thinking",
+                    content: `⚠️ 当前提示词较大 (~${estimatedTokens} tokens)。如果遇到问题，建议：\n1. 切换到 gemini-3-flash 模型\n2. 减少引用的文件\n3. 使用 Server 模式`
                 };
             } else {
                 console.log(`[AIService] Estimated prompt size: ~${estimatedTokens} tokens`);
@@ -752,14 +770,15 @@ export class AIService {
                                               errorMessage.includes("no text") ||
                                               errorMessage.includes("no content");
 
-                 if (mightBeEmptyResponse && retryCount < AIService.MAX_RETRIES - 1) {
-                     const delay = AIService.RETRY_DELAYS[retryCount];
-                     console.warn(`[AIService] Possible empty response detected, retrying in ${delay}ms (attempt ${retryCount + 1}/${AIService.MAX_RETRIES})`);
+                 const maxRetries = this.getMaxRetries();
+                 if (mightBeEmptyResponse && retryCount < maxRetries - 1) {
+                     const delay = this.getRetryDelay(retryCount);
+                     console.warn(`[AIService] Possible empty response detected, retrying in ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`);
 
                      // Yield a status message to user
                      yield {
                          type: "thinking",
-                         content: `检测到可能的空响应，正在重试 (${retryCount + 1}/${AIService.MAX_RETRIES})...`
+                         content: `检测到可能的空响应，正在重试 (${retryCount + 1}/${maxRetries})...`
                      };
 
                      await new Promise(resolve => setTimeout(resolve, delay));
@@ -768,10 +787,10 @@ export class AIService {
                  }
 
                  // Not a retryable error or max retries reached
-                 if (retryCount >= AIService.MAX_RETRIES - 1 && mightBeEmptyResponse) {
+                 if (retryCount >= maxRetries - 1 && mightBeEmptyResponse) {
                      yield {
                          type: "error",
-                         content: `连接 Gemini API 时出错（已重试 ${AIService.MAX_RETRIES} 次）: ${errorDetails}${errorMessage}\n\n建议：\n1. 切换到 gemini-3-flash 模型（更稳定）\n2. 减少引用文件数量\n3. 切换到 Server 模式减少 token 使用`
+                         content: `连接 Gemini API 时出错（已重试 ${maxRetries} 次）: ${errorDetails}${errorMessage}\n\n建议：\n1. 切换到 gemini-3-flash 模型（更稳定）\n2. 减少引用文件数量\n3. 切换到 Server 模式减少 token 使用`
                      };
                  } else {
                      yield { type: "error", content: `连接 Gemini API 时出错: ${errorDetails}${errorMessage}` };
@@ -814,6 +833,16 @@ export class AIService {
                          return;
                      }
 
+                     // Check for MALFORMED_FUNCTION_CALL error (missing thought signature)
+                     if (chunk.finishReason === "MALFORMED_FUNCTION_CALL") {
+                         console.error('[AIService] MALFORMED_FUNCTION_CALL detected:', chunk.finishMessage);
+                         yield {
+                             type: "error",
+                             content: `函数调用错误: ${chunk.finishMessage || "Malformed function call"}\n\n这通常是由于对话历史过长导致的。建议：\n1. 切换到 Server 模式（推荐）\n2. 切换到 gemini-3-flash 模型\n3. 减少引用的文件数量`
+                         };
+                         return;
+                     }
+
                      // Check for empty response (known bug workaround)
                      if (this.isEmptyResponse(chunk) && !receivedAnyContent) {
                          console.warn('[AIService] Detected empty response chunk with finishReason: STOP');
@@ -834,19 +863,28 @@ export class AIService {
                      if (calls && calls.length > 0) {
                          receivedAnyContent = true;
                          console.log(`[AIService] Received ${calls.length} function call(s) from API`);
-                         functionCalls.push(...calls);
+
+                         // Process each call and attach thought signature
                          for (const call of calls) {
+                             // Extract thought signature if present (required for Gemini 3)
+                             const signature = (call as any).thoughtSignature;
+
                              // Debug: Log the raw structure of the function call
                              console.log(`[AIService] Raw function call structure for ${call.name}:`, JSON.stringify({
                                  name: call.name,
                                  argsKeys: call.args ? Object.keys(call.args) : [],
-                                 hasThoughtSignature: !!(call as any).thoughtSignature,
-                                 thoughtSignatureType: typeof (call as any).thoughtSignature,
-                                 thoughtSignatureLength: (call as any).thoughtSignature?.length
+                                 hasThoughtSignature: !!signature,
+                                 thoughtSignatureType: typeof signature,
+                                 thoughtSignatureLength: signature?.length
                              }, null, 2));
 
-                             // Extract thought signature if present (required for Gemini 3)
-                             const signature = (call as any).thoughtSignature;
+                             // Store the call WITH its thought signature attached
+                             const enrichedCall = {
+                                 ...call,
+                                 thoughtSignature: signature  // Attach signature to call object
+                             };
+
+                             functionCalls.push(enrichedCall);
 
                              if (signature) {
                                  console.log(`[AIService] ✓ Found thoughtSignature for function call: ${call.name}`);
@@ -870,13 +908,14 @@ export class AIService {
                 if (!receivedAnyContent && !hasReceivedText && functionCalls.length === 0) {
                     console.warn('[AIService] Stream completed without any content, triggering retry');
 
-                    if (retryCount < AIService.MAX_RETRIES - 1) {
-                        const delay = AIService.RETRY_DELAYS[retryCount];
-                        console.warn(`[AIService] Empty response in stream, retrying in ${delay}ms (attempt ${retryCount + 1}/${AIService.MAX_RETRIES})`);
+                    const maxRetries = this.getMaxRetries();
+                    if (retryCount < maxRetries - 1) {
+                        const delay = this.getRetryDelay(retryCount);
+                        console.warn(`[AIService] Empty response in stream, retrying in ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`);
 
                         yield {
                             type: "thinking",
-                            content: `检测到空响应，正在重试 (${retryCount + 1}/${AIService.MAX_RETRIES})...`
+                            content: `检测到空响应，正在重试 (${retryCount + 1}/${maxRetries})...`
                         };
 
                         await new Promise(resolve => setTimeout(resolve, delay));
@@ -886,7 +925,7 @@ export class AIService {
                         // Max retries reached
                         yield {
                             type: "error",
-                            content: `模型没有返回文本响应（已重试 ${AIService.MAX_RETRIES} 次）。建议：\n1. 切换到 gemini-3-flash 模型（更稳定）\n2. 减少引用文件数量\n3. 切换到 Server 模式减少 token 使用`
+                            content: `模型没有返回文本响应（已重试 ${maxRetries} 次）。建议：\n1. 切换到 gemini-3-flash 模型（更稳定）\n2. 减少引用文件数量\n3. 切换到 Server 模式减少 token 使用`
                         };
                         return;
                     }
@@ -903,13 +942,14 @@ export class AIService {
                                    streamError.message?.includes("no content") ||
                                    streamError.message?.includes("空响应");
 
-                if (isRetryable && retryCount < AIService.MAX_RETRIES - 1) {
-                    const delay = AIService.RETRY_DELAYS[retryCount];
-                    console.warn(`[AIService] Retryable stream error, retrying in ${delay}ms (attempt ${retryCount + 1}/${AIService.MAX_RETRIES})`);
+                const maxRetries = this.getMaxRetries();
+                if (isRetryable && retryCount < maxRetries - 1) {
+                    const delay = this.getRetryDelay(retryCount);
+                    console.warn(`[AIService] Retryable stream error, retrying in ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`);
 
                     yield {
                         type: "thinking",
-                        content: `检测到流处理错误，正在重试 (${retryCount + 1}/${AIService.MAX_RETRIES})...`
+                        content: `检测到流处理错误，正在重试 (${retryCount + 1}/${maxRetries})...`
                     };
 
                     await new Promise(resolve => setTimeout(resolve, delay));
@@ -918,10 +958,10 @@ export class AIService {
                 }
 
                 // Not retryable or max retries reached
-                if (retryCount >= AIService.MAX_RETRIES - 1 && isRetryable) {
+                if (retryCount >= maxRetries - 1 && isRetryable) {
                     yield {
                         type: "error",
-                        content: `处理响应流时出错（已重试 ${AIService.MAX_RETRIES} 次）: ${streamError.message || streamError.toString()}\n\n建议：\n1. 切换到 gemini-3-flash 模型\n2. 减少引用文件数量\n3. 切换到 Server 模式`
+                        content: `处理响应流时出错（已重试 ${maxRetries} 次）: ${streamError.message || streamError.toString()}\n\n建议：\n1. 切换到 gemini-3-flash 模型\n2. 减少引用文件数量\n3. 切换到 Server 模式`
                     };
                 } else {
                     yield { type: "error", content: `处理响应流时出错: ${streamError.message || streamError.toString()}` };
@@ -938,7 +978,7 @@ export class AIService {
                  const functionResponses: Part[] = [];
                  
                  for (const call of functionCalls) {
-                     const { name, args } = call;
+                     const { name, args, thoughtSignature } = call;
                      // New SDK args might be object directly? Yes.
                      const toolArgs = args as any;
                      let output = "";
@@ -1018,7 +1058,8 @@ export class AIService {
                                             functionResponse: {
                                                 name: name,
                                                 response: { result: refinedOutput }
-                                            }
+                                            },
+                                            thoughtSignature: thoughtSignature
                                         });
                                         continue;
                                     } else {
@@ -1048,7 +1089,8 @@ export class AIService {
                                 functionResponse: {
                                     name: name,
                                     response: { result: output }
-                                }
+                                },
+                                thoughtSignature: thoughtSignature
                             });
                             continue;
                         } else if (name === "readFile") {
@@ -1081,7 +1123,8 @@ export class AIService {
                                     functionResponse: {
                                         name: name,
                                         response: { result: output }
-                                    }
+                                    },
+                                    thoughtSignature: thoughtSignature
                                 });
                                 continue;
                             }
@@ -1189,7 +1232,8 @@ export class AIService {
                                     functionResponse: {
                                         name: name,
                                         response: { result: output }
-                                    }
+                                    },
+                                    thoughtSignature: thoughtSignature
                                 });
                                 continue;
 
@@ -1204,12 +1248,13 @@ export class AIService {
                      }
                      
                      yield createToolResult(name, output, toolArgs, undoData);
-                     
+
                      functionResponses.push({
                          functionResponse: {
                              name: name,
                              response: { result: output }
-                         }
+                         },
+                         thoughtSignature: thoughtSignature
                      });
                  }
                  

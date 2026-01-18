@@ -112,6 +112,9 @@ export interface VoyaruSettings {
     waitingMessageInterval: number;   // 等待消息切换间隔（毫秒）
     waitingMessages: string[];        // 预设等待文字列表
     useProjectContentAsWaitingMessages: boolean;  // 使用项目内容作为等待消息
+
+    // API 重试配置
+    maxRetries: number;               // API 请求失败时的最大重试次数
 }
 
 // Note: DEFAULT_TOOLS and DEFAULT_POST_CHECK_ITEMS are now loaded from prompts.json
@@ -180,7 +183,10 @@ export const DEFAULT_SETTINGS: VoyaruSettings = {
         "组织语言中...",
         "灵感涌现中..."
     ],
-    useProjectContentAsWaitingMessages: false  // 使用项目内容作为等待消息
+    useProjectContentAsWaitingMessages: false,  // 使用项目内容作为等待消息
+
+    // API 重试配置
+    maxRetries: 3  // 默认重试3次
 };
 
 export class VoyaruSettingTab extends PluginSettingTab {
@@ -484,6 +490,26 @@ export class VoyaruSettingTab extends PluginSettingTab {
                         await this.plugin.refreshWaitingMessagesFromChapters();
                     }
                 }));
+
+        // API 重试配置
+        containerEl.createEl('h3', { text: 'API 重试配置' });
+
+        new Setting(containerEl)
+            .setName('最大重试次数')
+            .setDesc('当 API 请求失败（如空响应、网络错误等）时的最大重试次数（0-10 次）')
+            .addSlider(slider => slider
+                .setLimits(0, 10, 1)
+                .setValue(this.plugin.settings.maxRetries ?? 3)
+                .setDynamicTooltip()
+                .onChange(async (value) => {
+                    this.plugin.settings.maxRetries = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('重试延迟说明')
+            .setDesc('重试将使用指数退避策略：第1次重试等待1秒，第2次等待2秒，第3次等待4秒，以此类推。')
+            .setClass('setting-item-description');
     }
 
     private renderProvidersList(container: HTMLElement) {
