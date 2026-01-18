@@ -449,8 +449,8 @@ export class ToolsManagerModal extends Modal {
                         this.app,
                         conflicts,
                         newTools,
-                        (resolvedTools, shouldOverwrite) => {
-                            this.applyImport(resolvedTools, shouldOverwrite);
+                        (resolvedTools, newToolsFromModal, shouldOverwrite) => {
+                            this.applyImport(resolvedTools, newToolsFromModal, shouldOverwrite);
                         }
                     ).open();
                 } else {
@@ -471,11 +471,12 @@ export class ToolsManagerModal extends Modal {
     
     private applyImport(
         conflicts: { imported: AgentTool, existing: AgentTool, index: number }[],
+        newTools: AgentTool[],
         shouldOverwrite: Map<number, boolean>
     ) {
         let overwriteCount = 0;
         let addedCount = 0;
-        
+
         // 处理冲突的工具
         conflicts.forEach(conflict => {
             if (shouldOverwrite.get(conflict.index)) {
@@ -486,12 +487,21 @@ export class ToolsManagerModal extends Modal {
                 }
             }
         });
-        
+
+        // 添加新工具
+        this.tools.push(...newTools);
+        addedCount = newTools.length;
+
         this.renderLeftPanel();
         this.renderRightPanel();
-        
-        if (overwriteCount > 0) {
+
+        // 更新提示信息
+        if (overwriteCount > 0 && addedCount > 0) {
+            new Notice(`导入完成：覆盖了 ${overwriteCount} 个工具，新增了 ${addedCount} 个工具`);
+        } else if (overwriteCount > 0) {
             new Notice(`导入完成：覆盖了 ${overwriteCount} 个工具`);
+        } else if (addedCount > 0) {
+            new Notice(`导入完成：新增了 ${addedCount} 个工具`);
         } else {
             new Notice(`导入完成`);
         }
@@ -507,14 +517,14 @@ export class ToolsManagerModal extends Modal {
 class ImportConflictModal extends Modal {
     private conflicts: { imported: AgentTool, existing: AgentTool, index: number }[];
     private newTools: AgentTool[];
-    private onResolve: (conflicts: { imported: AgentTool, existing: AgentTool, index: number }[], shouldOverwrite: Map<number, boolean>) => void;
+    private onResolve: (conflicts: { imported: AgentTool, existing: AgentTool, index: number }[], newTools: AgentTool[], shouldOverwrite: Map<number, boolean>) => void;
     private checkboxStates: Map<number, boolean> = new Map();
     
     constructor(
         app: App,
         conflicts: { imported: AgentTool, existing: AgentTool, index: number }[],
         newTools: AgentTool[],
-        onResolve: (conflicts: { imported: AgentTool, existing: AgentTool, index: number }[], shouldOverwrite: Map<number, boolean>) => void
+        onResolve: (conflicts: { imported: AgentTool, existing: AgentTool, index: number }[], newTools: AgentTool[], shouldOverwrite: Map<number, boolean>) => void
     ) {
         super(app);
         this.conflicts = conflicts;
@@ -617,7 +627,7 @@ class ImportConflictModal extends Modal {
             cls: 'mod-cta'
         });
         confirmBtn.addEventListener('click', () => {
-            this.onResolve(this.conflicts, this.checkboxStates);
+            this.onResolve(this.conflicts, this.newTools, this.checkboxStates);
             this.close();
         });
         

@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { AIService } from '../services/ai_service';
 import { FSService } from '../services/fs_service';
 import { SendIcon, StopIcon, PlusIcon, CloseIcon, CopyIcon, FileIcon, EditIcon, RefreshIcon, SaveIcon, UserIcon, BotIcon, ThinkingIcon, ToolIcon, TrashIcon, CheckIcon, TextSizeIcon, LogIcon, ExportIcon, ArrowUpIcon, MentionIcon, ChevronDownIcon, MoreHorizontalIcon, ClockIcon } from '../components/Icons';
-import { Message, Session, MODELS, QueryHistoryItem } from '../settings';
+import { Message, Session, MODELS, QueryHistoryItem, ProviderConfig } from '../settings';
 import { Notice, Menu, TFile, MarkdownView, Platform } from 'obsidian';
 import { ExportModal } from '../modals/ExportModal';
 import { LogModal } from '../modals/LogModal';
@@ -1112,10 +1112,6 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             if (!plugin.aiService) {
                 throw new Error("AI Service 未初始化。请检查插件设置。");
             }
-
-            // Sync model setting before sending
-            plugin.settings.model = selectedModel;
-            plugin.aiService.updateSettings(plugin.settings);
 
             // 单轮对话模式：不发送任何历史记录
             const isSingleTurnMode = plugin.settings.contextMode === 'single';
@@ -2885,9 +2881,19 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                     {MODELS.map(model => (
                                         <div 
                                             key={model.id}
-                                            onClick={() => {
+                                            onClick={async () => {
                                                 setSelectedModel(model.id);
                                                 setShowModelSelector(false);
+
+                                                // 立即同步到provider配置
+                                                const activeProvider = plugin.settings.providers?.find(
+                                                    (p: ProviderConfig) => p.id === plugin.settings.activeProviderId
+                                                );
+                                                if (activeProvider) {
+                                                    activeProvider.selectedModel = model.id;
+                                                    await plugin.saveSettings();
+                                                    plugin.aiService.updateSettings(plugin.settings);
+                                                }
                                             }}
                                             style={{
                                                 padding: '6px 8px',
