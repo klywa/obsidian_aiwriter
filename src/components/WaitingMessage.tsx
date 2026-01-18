@@ -76,7 +76,15 @@ export const WaitingMessage: React.FC<WaitingMessageProps> = ({
     useEffect(() => {
         if (!isExiting && typewriterCompleted) {
             messageSwitchTimerRef.current = setTimeout(() => {
-                setCurrentIndex(prev => (prev + 1) % validMessages.length);
+                // 随机选择下一条消息（避免连续显示同一条）
+                setCurrentIndex(prev => {
+                    if (validMessages.length <= 1) return 0;
+                    let newIndex;
+                    do {
+                        newIndex = Math.floor(Math.random() * validMessages.length);
+                    } while (newIndex === prev);
+                    return newIndex;
+                });
                 setTypewriterCompleted(false);
                 setShouldAnimateTypewriter(false);
             }, interval);
