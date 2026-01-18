@@ -46,6 +46,8 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const [textareaHeight, setTextareaHeight] = useState<number>(40); // 控制textarea的动态高度
     const [isComposing, setIsComposing] = useState(false); // 跟踪输入法状态
     const [streamingTextMessageId, setStreamingTextMessageId] = useState<string | null>(null); // 追踪正在流式输出的文本消息ID
+    const [isTypewriterAnimating, setIsTypewriterAnimating] = useState(false); // 追踪打字机动画是否仍在进行
+    const lastStreamingMessageIdRef = useRef<string | null>(null); // 保存最后一个流式消息ID，用于打字机动画完成判断
     const [showWaitingMessage, setShowWaitingMessage] = useState(false); // 等待消息状态（简化版）
     const [waitingMessages, setWaitingMessages] = useState<string[]>([]); // 动态获取的等待消息列表
     const waitingMessageClearedRef = useRef(false); // 跟踪等待消息是否已被清除（只在收到 text chunk 时清除）
@@ -530,7 +532,8 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     // 2. 如果answer长度超出聊天窗口，滚动到足以展示query尾部（四个按钮），不再往上滚动
     // 3. 用户手动滚动后，停止自动跟随
     const maybeAutoScrollDuringStreaming = (section: HTMLElement | null) => {
-        if (!isLoading) return;
+        // 在打字机动画期间也需要继续滚动检查
+        if (!isLoading && !isTypewriterAnimating) return;
         const container = messagesContainerRef.current;
         if (!container || !messagesEndRef.current || !section) return;
 
@@ -1136,8 +1139,10 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             let hasReceivedAnyChunk = false;
             let waitingMessageStartTime = Date.now(); // 记录等待消息开始显示的时间
 
-            // 设置当前正在流式输出的文本消息ID
+            // 设置当前正在流式输出的文本消息ID，并标记打字机动画开始
             setStreamingTextMessageId(currentResponseId);
+            setIsTypewriterAnimating(true);
+            lastStreamingMessageIdRef.current = currentResponseId; // 同步保存到ref，用于动画完成判断
             let updateTimer: NodeJS.Timeout | null = null;
             let pendingUpdateContent: string | null = null;
             let pendingUpdateId: string | null = null;
@@ -2176,8 +2181,13 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                         <TypewriterText
                                             text={m.content}
                                             isStreaming={isLoading && m.id === streamingTextMessageId}
+                                            shouldAnimate={
+                                                (isLoading && m.id === streamingTextMessageId) ||
+                                                (!isLoading && m.id === lastStreamingMessageIdRef.current && isTypewriterAnimating)
+                                            }
                                             speed={50}
                                             onUpdate={triggerScrollCheck}
+                                            onComplete={() => setIsTypewriterAnimating(false)}
                                         />
                                     ) : (
                                         m.content

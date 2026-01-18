@@ -23,8 +23,10 @@ import * as React from 'react';
 export interface TypewriterTextProps {
 	/** The complete text to display */
 	text: string;
-	/** Whether the text is currently being streamed */
+	/** Whether the text is currently being streamed (controls cursor visibility) */
 	isStreaming: boolean;
+	/** Whether to continue animating (defaults to isStreaming if not provided) */
+	shouldAnimate?: boolean;
 	/** Characters per second (default: 50) */
 	speed?: number;
 	/** Callback when typing animation completes */
@@ -38,11 +40,14 @@ export interface TypewriterTextProps {
 export const TypewriterText: React.FC<TypewriterTextProps> = ({
 	text,
 	isStreaming,
+	shouldAnimate,
 	speed = 50,
 	onComplete,
 	onUpdate,
 	className = '',
 }) => {
+	// Use shouldAnimate if explicitly provided, otherwise fall back to isStreaming
+	const animationActive = shouldAnimate ?? isStreaming;
 	const [displayText, setDisplayText] = React.useState('');
 	const [currentIndex, setCurrentIndex] = React.useState(0);
 	const prevTextRef = React.useRef(text);
@@ -65,18 +70,25 @@ export const TypewriterText: React.FC<TypewriterTextProps> = ({
 		}
 	}, [text]);
 
-	// When streaming stops, show complete text immediately
+	// Track streaming state changes (for cursor visibility logic)
 	React.useEffect(() => {
-		if (!isStreaming && prevStreamingRef.current && text) {
+		prevStreamingRef.current = isStreaming;
+	}, [isStreaming]);
+
+	// 当 shouldAnimate 变为 false 且动画未完成时，确保显示完整文本
+	React.useEffect(() => {
+		if (!animationActive && currentIndex < text.length) {
 			setDisplayText(text);
 			setCurrentIndex(text.length);
+			if (onComplete) {
+				onComplete();
+			}
 		}
-		prevStreamingRef.current = isStreaming;
-	}, [isStreaming, text]);
+	}, [animationActive, text, currentIndex, onComplete]);
 
 	// Typewriter animation
 	React.useEffect(() => {
-		if (!isStreaming || currentIndex >= text.length) {
+		if (!animationActive || currentIndex >= text.length) {
 			if (currentIndex >= text.length && onComplete) {
 				onComplete();
 			}
@@ -120,7 +132,7 @@ export const TypewriterText: React.FC<TypewriterTextProps> = ({
 				cancelAnimationFrame(animationFrameRef.current);
 			}
 		};
-	}, [currentIndex, text, isStreaming, speed, onComplete, onUpdate]);
+	}, [currentIndex, text, animationActive, speed, onComplete, onUpdate]);
 
 	return (
 		<span className={`voyaru-typewriter-text ${className}`}>
