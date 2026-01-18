@@ -324,7 +324,8 @@ export class FSService {
             console.log(`[FSService] Reading ${selectedFiles.length} random files for sentence extraction`);
 
             // Chinese sentence terminators - we need to preserve closing quotes
-            const sentenceTerminators = /[。！？…”]/g;
+            // Use + to handle continuous punctuation like …… or ！！
+            const sentenceTerminators = /[。！？…]+/g;
 
             for (const file of selectedFiles) {
                 try {
@@ -336,38 +337,46 @@ export class FSService {
                     const lines = content.split('\n');
 
                     for (const line of lines) {
-                        // Skip empty lines (whitespace only) - they act as sentence separators
-                        if (!line.trim()) {
-                            continue;
-                        }
+                        // Skip empty lines (whitespace only)
+                        if (!line.trim()) continue;
+                        
+                        // Skip lines with headings (#) or tables (|) or hr (---)
+                        if (line.includes('#') || line.includes('|') || line.startsWith('---')) continue;
+
+                        // Remove stars (*) used for bold/italic
+                        const cleanLine = line.replace(/\*/g, '').trim();
+                        if (!cleanLine) continue;
 
                         let lastIndex = 0;
                         let match;
+                        // Include ellipsis (…) and handle continuous punctuation
                         sentenceTerminators.lastIndex = 0;
 
-                        while ((match = sentenceTerminators.exec(line)) !== null) {
-                            let endIndex = match.index + 1; // Include the terminator
+                        while ((match = sentenceTerminators.exec(cleanLine)) !== null) {
+                            let endIndex = match.index + match[0].length; // Include the terminator(s)
 
                             // Check if followed by closing quotes (Chinese or English)
-                            const remaining = line.slice(endIndex);
-                            const quoteMatch = remaining.match(/^(['""」』])/);
+                            const remaining = cleanLine.slice(endIndex);
+                            // Match various closing quotes: ” ’ " ' 」 』
+                            const quoteMatch = remaining.match(/^([”’"']|」|』)/);
 
-                            if (quoteMatch && quoteMatch[1]) {
-                                endIndex += quoteMatch[1].length; // Include the closing quote
+                            if (quoteMatch) {
+                                endIndex += quoteMatch[0].length; // Include the closing quote
                                 sentenceTerminators.lastIndex = endIndex;
                             }
 
-                            const sentence = line.slice(lastIndex, endIndex).trim();
-                            if (sentence) {
+                            const sentence = cleanLine.slice(lastIndex, endIndex).trim();
+                            // Filter out sentences starting with punctuation or too short
+                            if (sentence && !/^[。！？,，]/.test(sentence)) {
                                 extractedSentences.push(sentence);
                             }
                             lastIndex = endIndex;
                         }
 
                         // Add any remaining content on this line
-                        if (lastIndex < line.length) {
-                            const remaining = line.slice(lastIndex).trim();
-                            if (remaining) {
+                        if (lastIndex < cleanLine.length) {
+                            const remaining = cleanLine.slice(lastIndex).trim();
+                            if (remaining && !/^[。！？,，]/.test(remaining)) {
                                 extractedSentences.push(remaining);
                             }
                         }
@@ -382,8 +391,40 @@ export class FSService {
                             return length >= minSentenceLength && length <= maxSentenceLength;
                         })
                         .map(s => {
+                            let processed = s;
+
+                            // Auto-complete missing starting quotes if sentence ends with a closing quote
+                            const lastChar = processed.slice(-1);
+                            const quotePairs: {[key: string]: string} = {
+                                '”': '“',
+                                '’': '‘',
+                                '」': '「',
+                                '』': '『',
+                                '"': '"',
+                                "'": "'"
+                            };
+
+                            if (quotePairs[lastChar]) {
+                                const startQuote = quotePairs[lastChar];
+                                
+                                if (lastChar === '"' || lastChar === "'") {
+                                    // Non-directional quotes: count occurrences
+                                    const count = processed.split(lastChar).length - 1;
+                                    if (count % 2 !== 0) {
+                                        processed = startQuote + processed;
+                                    }
+                                } else {
+                                    // Directional quotes: compare counts
+                                    const startCount = processed.split(startQuote).length - 1;
+                                    const endCount = processed.split(lastChar).length - 1;
+                                    if (startCount < endCount) {
+                                        processed = startQuote + processed;
+                                    }
+                                }
+                            }
+
                             // Add ellipsis for continuity if not already ending with one
-                            return s + (s.endsWith('…') ? '' : '…');
+                            return processed + (processed.endsWith('…') ? '' : '…');
                         });
 
                     console.log(`[FSService] After filtering (length ${minSentenceLength}-${maxSentenceLength}): ${cleanedSentences.length} sentences`);
