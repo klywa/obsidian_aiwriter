@@ -1107,6 +1107,9 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
 
         abortControllerRef.current = new AbortController();
 
+        // 将 fullLog 定义在 try 块外部，以便 catch 块也能访问
+        let fullLog: any[] = [];
+
         try {
             // 检查 aiService 是否存在
             if (!plugin.aiService) {
@@ -1116,7 +1119,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             // 单轮对话模式：不发送任何历史记录
             const isSingleTurnMode = plugin.settings.contextMode === 'single';
             const historyForRequest = isSingleTurnMode ? [] : historyToUse;
-            
+
             console.log('Calling streamChat with history length:', historyForRequest.length, isSingleTurnMode ? '(single-turn mode)' : '');
             const stream = plugin.aiService.streamChat(currentSessionId, historyForRequest, messageContent, newUserMsg.referencedFiles, abortControllerRef.current.signal);
 
@@ -1132,7 +1135,6 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             let updateTimer: NodeJS.Timeout | null = null;
             let pendingUpdateContent: string | null = null;
             let pendingUpdateId: string | null = null;
-            let fullLog: any[] = []; // Store logs
 
             // 批量更新函数，减少渲染次数
             // Now accepts ID to target specific messages
@@ -1391,12 +1393,13 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     } else if (chunk.type === 'error') {
                         // 如果是手动停止（abortControllerRef.current 为 null），或者已经是 aborted 状态，则忽略
                         if (!abortControllerRef.current || abortControllerRef.current.signal.aborted) return;
-                        
+
                         console.error('Error chunk received:', chunk.content);
-                        setMessages(prev => [...prev, { 
-                            role: 'error', 
+                        setMessages(prev => [...prev, {
+                            role: 'error',
                             content: chunk.content,
-                            id: `msg-${Date.now()}-${Math.random()}-error`
+                            id: `msg-${Date.now()}-${Math.random()}-error`,
+                            toolData: { logs: fullLog }  // 附加日志以便用户查看原始响应
                         }]);
                         setIsLoading(false);
                         return; 
@@ -1461,10 +1464,11 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             // 如果没有收到任何响应，显示提示
             if (!hasReceivedAnyChunk && !abortControllerRef.current?.signal.aborted) {
                 console.warn('No chunks received from stream');
-                setMessages(prev => [...prev, { 
-                    role: 'error', 
+                setMessages(prev => [...prev, {
+                    role: 'error',
                     content: "未收到模型响应。请检查 API Key 设置和网络连接。",
-                    id: `msg-${Date.now()}-${Math.random()}-error`
+                    id: `msg-${Date.now()}-${Math.random()}-error`,
+                    toolData: { logs: fullLog }  // 附加日志以便用户查看原始响应
                 }]);
             }
 
@@ -1472,10 +1476,11 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             if (!abortControllerRef.current || abortControllerRef.current.signal.aborted || e.message === "生成已取消") return;
             console.error('Error in handleSendMessage:', e);
             const errorMessage = e?.message || e?.toString() || "发生未知错误。";
-            setMessages(prev => [...prev, { 
-                role: 'error', 
+            setMessages(prev => [...prev, {
+                role: 'error',
                 content: `错误: ${errorMessage}`,
-                id: `msg-${Date.now()}-${Math.random()}-error`
+                id: `msg-${Date.now()}-${Math.random()}-error`,
+                toolData: { logs: fullLog }  // 附加日志以便用户查看原始响应
             }]);
         } finally {
             setIsLoading(false);
@@ -2239,6 +2244,24 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                     <LogIcon size={14} />
                                 </button>
                             )}
+                        </div>
+                    )}
+
+                    {/* Action Bar for Error messages - show log button if logs available */}
+                    {m.role === 'error' && m.toolData?.logs && m.toolData.logs.length > 0 && (
+                        <div style={{
+                            display: 'flex',
+                            gap: '8px',
+                            marginTop: '4px',
+                            opacity: 0.6,
+                            transition: 'opacity 0.2s',
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                        onMouseLeave={e => e.currentTarget.style.opacity = '0.6'}
+                        >
+                            <button className="clickable-icon" onClick={() => m.toolData?.logs && handleShowLogs(m.toolData.logs)} title="查看原始响应日志" style={{ background: 'none', border: 'none', padding: '4px', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                                <LogIcon size={14} />
+                            </button>
                         </div>
                     )}
                 </div>
