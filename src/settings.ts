@@ -122,6 +122,7 @@ export interface VoyaruSettings {
 // Migration: On first load, settings will be populated from prompts.json if empty.
 
 export const MODELS = [
+  { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro (Thinking)' },
   { id: 'gemini-3-pro-preview', name: 'Gemini 3.0 Pro (Thinking)' },
   { id: 'gemini-3-flash-preview', name: 'Gemini 3.0 Flash (Fast & Thinking)' },
   { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },

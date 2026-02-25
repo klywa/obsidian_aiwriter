@@ -43,6 +43,13 @@ export class GeminiAdapter extends BaseModelAdapter {
         // Gemini的模型列表，API不提供动态获取，使用硬编码
         return [
             {
+                id: 'gemini-3.1-pro-preview',
+                name: 'Gemini 3.1 Pro (Thinking)',
+                contextWindow: 1000000,
+                supportsFunctionCalling: true,
+                supportsStreaming: true
+            },
+            {
                 id: 'gemini-3-pro-preview',
                 name: 'Gemini 3.0 Pro (Thinking)',
                 contextWindow: 1000000,
