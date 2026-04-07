@@ -62,6 +62,12 @@ export default class VoyaruPlugin extends Plugin {
 			this.activateView();
 		});
 
+		// Ribbon Icon - Settings
+		this.addRibbonIcon('settings', '插件设置', () => {
+			(this.app as any).setting.open();
+			(this.app as any).setting.openTabById('voyaru-plugin');
+		});
+
 		// Status Bar
 		const statusBarItemEl = this.addStatusBarItem();
 		statusBarItemEl.setText('Voyaru Active');
