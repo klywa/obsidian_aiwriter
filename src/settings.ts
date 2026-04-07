@@ -201,6 +201,12 @@ export class VoyaruSettingTab extends PluginSettingTab {
 
     display(): void {
         // Prevent ESC from closing the settings modal
+        // Remove any stale listener before creating a new one
+        if (this.escHandler) {
+            const staleModal = this.containerEl.closest('.modal');
+            if (staleModal) staleModal.removeEventListener('keydown', this.escHandler, true);
+            this.escHandler = null;
+        }
         this.escHandler = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
                 e.stopPropagation();
@@ -209,7 +215,6 @@ export class VoyaruSettingTab extends PluginSettingTab {
         };
         const settingsModal = this.containerEl.closest('.modal');
         if (settingsModal) {
-            settingsModal.removeEventListener('keydown', this.escHandler, true);
             settingsModal.addEventListener('keydown', this.escHandler, true);
         }
 
@@ -535,6 +540,7 @@ export class VoyaruSettingTab extends PluginSettingTab {
             }
             this.escHandler = null;
         }
+        super.hide?.();
     }
 
     private renderProvidersList(container: HTMLElement) {
