@@ -49,7 +49,7 @@ export class PromptService {
         try {
             // 核心系统指令始终从代码内嵌的 DEFAULT_PROMPTS 加载
             // 确保用户更新插件版本后立即使用最新指令
-            this.prompts = DEFAULT_PROMPTS as unknown as PromptsConfig;
+            this.prompts = DEFAULT_PROMPTS;
             console.log(`[PromptService] Loaded embedded prompts version ${this.prompts.version}`);
 
             // Validate structure

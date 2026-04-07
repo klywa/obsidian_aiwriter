@@ -19,8 +19,9 @@ import { POST_CHECK_USER_MESSAGE } from './post_check/user_message';
 import { DEFAULT_POST_CHECK_ITEMS } from './post_check/default_items';
 import { LOCAL_EDIT_SYSTEM_INSTRUCTION } from './local_edit/system_instruction';
 import { LOCAL_EDIT_USER_MESSAGE } from './local_edit/user_message';
+import type { PromptsConfig } from './types';
 
-export const DEFAULT_PROMPTS = {
+export const DEFAULT_PROMPTS: PromptsConfig = {
     version: "1.0.0",
     system: {
         base: BASE_SYSTEM_PROMPT,
@@ -41,4 +42,4 @@ export const DEFAULT_PROMPTS = {
         systemInstruction: LOCAL_EDIT_SYSTEM_INSTRUCTION,
         userMessage: LOCAL_EDIT_USER_MESSAGE
     }
-} as const;
+};
