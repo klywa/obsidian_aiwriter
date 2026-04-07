@@ -1,8 +1,9 @@
-import { App, Modal, Setting, Notice } from "obsidian";
+import { App, Setting, Notice } from "obsidian";
 import { ProviderConfig, ProviderType } from "../settings";
 import { createAdapter, ModelInfo, PROVIDER_NAMES } from "../services/adapters";
+import { BaseModal } from "./BaseModal";
 
-export class ProviderConfigModal extends Modal {
+export class ProviderConfigModal extends BaseModal {
     private config: ProviderConfig;
     private onSave: (config: ProviderConfig) => void;
     private isNew: boolean;
@@ -27,6 +28,7 @@ export class ProviderConfigModal extends Modal {
     }
 
     onOpen() {
+        super.onOpen();
         const { contentEl } = this;
         contentEl.empty();
         contentEl.createEl("h2", { text: this.isNew ? "添加 AI 提供商" : "编辑 AI 提供商" });
@@ -249,6 +251,7 @@ export class ProviderConfigModal extends Modal {
     }
 
     onClose() {
+        super.onClose();
         const { contentEl } = this;
         contentEl.empty();
     }

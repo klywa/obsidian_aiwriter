@@ -1,8 +1,9 @@
-import { App, Modal, Notice, Setting, TFolder } from "obsidian";
+import { App, Notice, Setting, TFolder } from "obsidian";
 import { VoyaruSettings } from "../settings";
 import { FolderSuggestModal } from "../components/FolderSuggest";
+import { BaseModal } from "./BaseModal";
 
-export class FolderConfigModal extends Modal {
+export class FolderConfigModal extends BaseModal {
     private settings: VoyaruSettings;
     private onSave: (folders: VoyaruSettings['folders']) => void;
     private tempFolders: VoyaruSettings['folders'];
@@ -20,6 +21,7 @@ export class FolderConfigModal extends Modal {
     }
 
     onOpen() {
+        super.onOpen();
         const { contentEl } = this;
         
         contentEl.empty();
@@ -111,6 +113,7 @@ export class FolderConfigModal extends Modal {
     }
 
     onClose() {
+        super.onClose();
         const { contentEl } = this;
         contentEl.empty();
     }
