@@ -5,9 +5,12 @@ interface PlanCardProps {
     chapterPath: string;
     content: string;
     confirmed?: boolean;
+    aborted?: boolean;
     onConfirm: (planPath: string, chapterPath: string, editedContent: string, confirmMessage: string) => void;
     onRevise: (revisionNote: string) => void;
     onContentChange?: (newContent: string) => void;
+    onAbortKeep: (planPath: string) => void;
+    onAbortDelete: (planPath: string) => void;
 }
 
 export const PlanCard: React.FC<PlanCardProps> = ({
@@ -15,9 +18,12 @@ export const PlanCard: React.FC<PlanCardProps> = ({
     chapterPath,
     content,
     confirmed = false,
+    aborted = false,
     onConfirm,
     onRevise,
-    onContentChange
+    onContentChange,
+    onAbortKeep,
+    onAbortDelete
 }) => {
     const [showReviseInput, setShowReviseInput] = useState(false);
     const [reviseNote, setReviseNote] = useState('');
@@ -60,7 +66,9 @@ export const PlanCard: React.FC<PlanCardProps> = ({
             </div>
             <div className="voyaru-plan-card-actions">
                 {confirmed ? (
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.875em' }}>✓ 规划已确认</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.875em' }}>
+                        {aborted ? '⏹ 已中止' : '✓ 规划已确认'}
+                    </span>
                 ) : !showReviseInput ? (
                     <>
                         <textarea
@@ -80,6 +88,18 @@ export const PlanCard: React.FC<PlanCardProps> = ({
                             onClick={() => setShowReviseInput(true)}
                         >
                             ✏️ 提出修改意见
+                        </button>
+                        <button
+                            className="voyaru-plan-card-btn voyaru-plan-card-btn-abort"
+                            onClick={() => onAbortKeep(planPath)}
+                        >
+                            ⏹ 保留规划并中止
+                        </button>
+                        <button
+                            className="voyaru-plan-card-btn voyaru-plan-card-btn-abort"
+                            onClick={() => onAbortDelete(planPath)}
+                        >
+                            🗑 删除规划并中止
                         </button>
                     </>
                 ) : (

@@ -1930,6 +1930,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     chapterPath={m.planData.chapterPath}
                     content={m.planData.content}
                     confirmed={m.planData.confirmed}
+                    aborted={m.planData.aborted}
                     onConfirm={async (planPath, chapterPath, editedContent, confirmMessage) => {
                         // If user edited the plan, save the edited version to disk first
                         if (editedContent !== m.planData!.content) {
@@ -1957,6 +1958,27 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     onRevise={(revisionNote) => {
                         const reviseMsg = `规划修改意见：${revisionNote}\n\n请根据上述意见重新生成章节规划。`;
                         handleSendMessage(reviseMsg);
+                    }}
+                    onAbortKeep={(planPath) => {
+                        setMessages(prev => prev.map(msg =>
+                            msg.id === m.id
+                                ? { ...msg, planData: { ...msg.planData!, confirmed: true, aborted: true } }
+                                : msg
+                        ));
+                        new Notice('规划已保留，任务已中止。');
+                    }}
+                    onAbortDelete={async (planPath) => {
+                        try {
+                            await plugin.aiService.fs.deleteFile(planPath);
+                        } catch (e) {
+                            console.warn('[PlanCard] Failed to delete plan file:', e);
+                        }
+                        setMessages(prev => prev.map(msg =>
+                            msg.id === m.id
+                                ? { ...msg, planData: { ...msg.planData!, confirmed: true, aborted: true } }
+                                : msg
+                        ));
+                        new Notice('规划已删除，任务已中止。');
                     }}
                 />
             );

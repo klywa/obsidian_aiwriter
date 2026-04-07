@@ -2839,6 +2839,12 @@ Design Tokens are imported first to establish the design system foundation.
     border: 1px solid var(--background-modifier-border);
 }
 
+.voyaru-plan-card-btn-abort {
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--background-modifier-border);
+}
+
 .voyaru-plan-card-revise {
     width: 100%;
     display: flex;

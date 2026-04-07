@@ -52,6 +52,7 @@ export interface Message {
         chapterPath: string;
         content: string;
         confirmed: boolean;
+        aborted?: boolean;
     };
 }
 
