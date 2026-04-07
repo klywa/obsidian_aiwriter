@@ -192,6 +192,7 @@ export const DEFAULT_SETTINGS: VoyaruSettings = {
 
 export class VoyaruSettingTab extends PluginSettingTab {
     plugin: any; // Using any to avoid circular import issues for now, or use interface
+    private escHandler: ((e: KeyboardEvent) => void) | null = null;
 
     constructor(app: App, plugin: any) {
         super(app, plugin);
@@ -199,6 +200,19 @@ export class VoyaruSettingTab extends PluginSettingTab {
     }
 
     display(): void {
+        // Prevent ESC from closing the settings modal
+        this.escHandler = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                e.stopPropagation();
+                e.preventDefault();
+            }
+        };
+        const settingsModal = this.containerEl.closest('.modal');
+        if (settingsModal) {
+            settingsModal.removeEventListener('keydown', this.escHandler, true);
+            settingsModal.addEventListener('keydown', this.escHandler, true);
+        }
+
         const { containerEl } = this;
 
         containerEl.empty();
@@ -511,6 +525,16 @@ export class VoyaruSettingTab extends PluginSettingTab {
             .setName('重试延迟说明')
             .setDesc('重试将使用指数退避策略：第1次重试等待1秒，第2次等待2秒，第3次等待4秒，以此类推。')
             .setClass('setting-item-description');
+    }
+
+    hide(): void {
+        if (this.escHandler) {
+            const settingsModal = this.containerEl.closest('.modal');
+            if (settingsModal) {
+                settingsModal.removeEventListener('keydown', this.escHandler, true);
+            }
+            this.escHandler = null;
+        }
     }
 
     private renderProvidersList(container: HTMLElement) {
