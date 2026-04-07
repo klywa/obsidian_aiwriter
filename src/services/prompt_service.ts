@@ -3,92 +3,16 @@ import type VoyaruPlugin from "../main";
 import type { AgentTool, PostCheckItem } from "../settings";
 import { Type } from "@google/genai";
 import type { FunctionDeclaration } from "@google/genai";
-import { DEFAULT_PROMPTS } from "./default_prompts";
-
-/**
- * Multilingual text object with zh/en support
- */
-interface I18nText {
-    zh: string;
-    en?: string | null;
-}
-
-/**
- * Template configuration for prompts that require variable substitution
- */
-interface TemplateConfig {
-    zh: string;
-    en?: string | null;
-    template: boolean;
-    variables: string[];
-}
-
-/**
- * Optional prompt with warning
- */
-interface OptionalPrompt extends I18nText {
-    optional: boolean;
-    warning: string;
-}
-
-/**
- * Tool definition in prompts.json
- */
-interface ToolDefinition {
-    id: string;
-    name: I18nText;
-    prompt: I18nText;
-}
-
-/**
- * Function definition in prompts.json
- */
-interface FunctionDef {
-    name: string;
-    description: I18nText;
-    parameters: {
-        type: string;
-        properties: Record<string, {
-            type: string;
-            description: I18nText;
-        }>;
-        required: string[];
-    };
-}
-
-/**
- * Post-check item in prompts.json
- */
-interface PostCheckItemDef {
-    id: string;
-    checkPrompt: I18nText;
-}
-
-/**
- * Root structure of prompts.json
- */
-interface PromptsConfig {
-    version: string;
-    system: {
-        base: I18nText;
-        jailbreak: OptionalPrompt;
-        styleGuideInstruction: TemplateConfig;
-        referenceModeInstruction: I18nText;
-    };
-    tools: {
-        default: ToolDefinition[];
-        functionDefinitions: Record<string, FunctionDef>;
-    };
-    postCheck: {
-        systemPrompt: TemplateConfig;
-        userMessage: TemplateConfig;
-        defaultItems: PostCheckItemDef[];
-    };
-    localEdit: {
-        systemInstruction: TemplateConfig;
-        userMessage: TemplateConfig;
-    };
-}
+import { DEFAULT_PROMPTS } from "../prompts";
+import type {
+    I18nText,
+    TemplateConfig,
+    OptionalPrompt,
+    ToolDefinition,
+    FunctionDef,
+    PostCheckItemDef,
+    PromptsConfig
+} from "../prompts/types";
 
 /**
  * Parameters for local edit user message
