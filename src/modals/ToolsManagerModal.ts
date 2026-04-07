@@ -1,8 +1,9 @@
-import { App, Modal, Notice, Platform } from "obsidian";
+import { App, Notice, Platform } from "obsidian";
 import { AgentTool } from "../settings";
 import Sortable from "sortablejs";
+import { BaseModal } from "./BaseModal";
 
-export class ToolsManagerModal extends Modal {
+export class ToolsManagerModal extends BaseModal {
     private tools: AgentTool[];
     private onSave: (tools: AgentTool[]) => void;
     private leftPanel: HTMLElement;
@@ -38,8 +39,9 @@ export class ToolsManagerModal extends Modal {
     }
 
     onOpen() {
+        super.onOpen();
         const { contentEl } = this;
-        
+
         contentEl.empty();
         contentEl.addClass('tools-manager-modal');
         
@@ -508,13 +510,14 @@ export class ToolsManagerModal extends Modal {
     }
 
     onClose() {
+        super.onClose();
         const { contentEl } = this;
         contentEl.empty();
     }
 }
 
 // 导入冲突确认对话框
-class ImportConflictModal extends Modal {
+class ImportConflictModal extends BaseModal {
     private conflicts: { imported: AgentTool, existing: AgentTool, index: number }[];
     private newTools: AgentTool[];
     private onResolve: (conflicts: { imported: AgentTool, existing: AgentTool, index: number }[], newTools: AgentTool[], shouldOverwrite: Map<number, boolean>) => void;
@@ -538,8 +541,9 @@ class ImportConflictModal extends Modal {
     }
     
     onOpen() {
+        super.onOpen();
         const { contentEl } = this;
-        
+
         contentEl.empty();
         contentEl.addClass('import-conflict-modal');
         
@@ -640,6 +644,7 @@ class ImportConflictModal extends Modal {
     }
     
     onClose() {
+        super.onClose();
         const { contentEl } = this;
         contentEl.empty();
     }

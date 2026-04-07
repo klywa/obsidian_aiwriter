@@ -1,6 +1,7 @@
-import { App, Modal, Setting } from "obsidian";
+import { App, Setting } from "obsidian";
+import { BaseModal } from "./BaseModal";
 
-export class SystemPromptModal extends Modal {
+export class SystemPromptModal extends BaseModal {
     private prompt: string;
     private onSave: (prompt: string) => void;
     private textAreaEl: HTMLTextAreaElement;
@@ -14,6 +15,7 @@ export class SystemPromptModal extends Modal {
     }
 
     onOpen() {
+        super.onOpen();
         const { contentEl } = this;
 
         contentEl.empty();
@@ -88,6 +90,7 @@ export class SystemPromptModal extends Modal {
     }
 
     onClose() {
+        super.onClose();
         const { contentEl } = this;
         contentEl.empty();
     }
