@@ -139,51 +139,35 @@ export class AIService {
     }
 
     /**
-     * 尝试查找用户配置的知识库或笔记目录中的风格指南文件路径
-     * @returns 风格指南文件路径，如果不存在则返回 null
+     * 读取 vault 根目录下的 WRITER.md 内容
+     * @returns 文件内容，如果不存在则返回 null
      */
-    async findStyleGuidePath(): Promise<string | null> {
-        // 兼容有无 .md 后缀的文件名（Obsidian 中不显示 .md）
-        const styleGuideFileNames = ["风格指南.md", "风格指南"];
-        const folders = this.settings.folders;
-        
-        // 按优先级尝试查找用户配置的目录：知识库目录 > 笔记目录
-        // folders.knowledge 和 folders.notes 是用户在插件设置中配置的实际目录路径
-        const searchPaths: string[] = [];
-        for (const folder of [folders?.knowledge, folders?.notes]) {
-            if (folder) {
-                for (const fileName of styleGuideFileNames) {
-                    searchPaths.push(`${folder}/${fileName}`);
-                }
-            }
-        }
-        
-        for (const path of searchPaths) {
+    async readWriterMd(): Promise<string | null> {
+        for (const name of ['WRITER.md', 'WRITER']) {
             try {
-                const content = await this.fs.readFile(path);
+                const content = await this.fs.readFile(name);
                 if (content && content.trim().length > 0) {
-                    console.log(`[AIService] Found style guide at: ${path}`);
-                    return path;
+                    console.log(`[AIService] Found WRITER.md (${content.length} chars)`);
+                    return content;
                 }
             } catch (e) {
-                // 文件不存在，继续尝试下一个路径
+                // 文件不存在，继续尝试下一个
             }
         }
-        
-        console.log(`[AIService] No style guide found in configured knowledge or notes folders`);
+        console.log('[AIService] No WRITER.md found in vault root');
         return null;
     }
 
     /**
-     * 获取完整的 system prompt（包含风格指南引用指令）
+     * 获取完整的 system prompt（包含 WRITER.md 内容）
      */
     async getFullSystemPrompt(): Promise<string> {
         let prompt = this.getProcessedSystemPrompt();
 
-        // 查找风格指南文件路径
-        const styleGuidePath = await this.findStyleGuidePath();
-        if (styleGuidePath) {
-            prompt += '\n\n' + this.promptService.getStyleGuideInstruction(styleGuidePath);
+        // 读取 WRITER.md 并直接拼入系统 prompt
+        const writerMd = await this.readWriterMd();
+        if (writerMd) {
+            prompt += '\n\n---\n\n## WRITER.md（用户写作指南）\n\n' + writerMd;
         }
 
         return prompt;
