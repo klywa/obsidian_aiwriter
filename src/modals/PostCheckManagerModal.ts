@@ -1,8 +1,9 @@
-import { App, Modal, Notice, Platform } from "obsidian";
+import { App, Notice, Platform } from "obsidian";
+import { BaseModal } from "./BaseModal";
 import { PostCheckItem } from "../settings";
 import Sortable from "sortablejs";
 
-export class PostCheckManagerModal extends Modal {
+export class PostCheckManagerModal extends BaseModal {
     private items: PostCheckItem[];
     private onSave: (items: PostCheckItem[]) => void;
     private leftPanel: HTMLElement;
@@ -20,8 +21,9 @@ export class PostCheckManagerModal extends Modal {
     }
 
     onOpen() {
+        super.onOpen();
         const { contentEl } = this;
-        
+
         contentEl.empty();
         contentEl.addClass('postcheck-manager-modal');
         
@@ -407,13 +409,14 @@ export class PostCheckManagerModal extends Modal {
     }
 
     onClose() {
+        super.onClose();
         const { contentEl } = this;
         contentEl.empty();
     }
 }
 
 // Import conflict dialog
-class ImportConflictModal extends Modal {
+class ImportConflictModal extends BaseModal {
     private conflicts: { imported: PostCheckItem, existing: PostCheckItem, index: number }[];
     private newItems: PostCheckItem[];
     private onResolve: (conflicts: { imported: PostCheckItem, existing: PostCheckItem, index: number }[], shouldOverwrite: Map<number, boolean>) => void;
@@ -434,13 +437,14 @@ class ImportConflictModal extends Modal {
             this.checkboxStates.set(c.index, false);
         });
     }
-    
+
     onOpen() {
+        super.onOpen();
         const { contentEl } = this;
-        
+
         contentEl.empty();
         contentEl.addClass('import-conflict-modal');
-        
+
         contentEl.createEl('h2', { text: '导入检查项 - 冲突确认' });
         
         const infoDiv = contentEl.createDiv('conflict-info');
@@ -531,8 +535,9 @@ class ImportConflictModal extends Modal {
             this.close();
         });
     }
-    
+
     onClose() {
+        super.onClose();
         const { contentEl } = this;
         contentEl.empty();
     }
