@@ -465,5 +465,22 @@ export class FSService {
         );
         await this.writeFile(planPath, updated);
     }
+
+    /**
+     * Replaces the body (content after YAML frontmatter) of a .plan.md file
+     * with the user-edited content, preserving the frontmatter.
+     */
+    async updatePlanContent(planPath: string, newBody: string): Promise<void> {
+        const content = await this.readFile(planPath);
+        // Split on the closing frontmatter delimiter (second ---)
+        const frontmatterEnd = content.indexOf('---', 3);
+        if (frontmatterEnd !== -1) {
+            const frontmatter = content.slice(0, frontmatterEnd + 3);
+            await this.writeFile(planPath, frontmatter + '\n\n' + newBody);
+        } else {
+            // No frontmatter found — overwrite entirely
+            await this.writeFile(planPath, newBody);
+        }
+    }
 }
 

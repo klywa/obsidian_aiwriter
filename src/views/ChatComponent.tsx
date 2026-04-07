@@ -1930,14 +1930,29 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     chapterPath={m.planData.chapterPath}
                     content={m.planData.content}
                     confirmed={m.planData.confirmed}
-                    onConfirm={(planPath, chapterPath) => {
+                    onConfirm={async (planPath, chapterPath, editedContent, confirmMessage) => {
+                        // If user edited the plan, save the edited version to disk first
+                        if (editedContent !== m.planData!.content) {
+                            try {
+                                await plugin.aiService.fs.updatePlanContent(planPath, editedContent);
+                            } catch (e) {
+                                console.warn('[PlanCard] Failed to save edited plan to disk:', e);
+                            }
+                        }
                         setMessages(prev => prev.map(msg =>
                             msg.id === m.id
-                                ? { ...msg, planData: { ...msg.planData!, confirmed: true } }
+                                ? { ...msg, planData: { ...msg.planData!, confirmed: true, content: editedContent } }
                                 : msg
                         ));
-                        const confirmMsg = `[Plan Confirmed] planPath: ${planPath}\n\n已确认章节规划，请按照规划开始编写章节正文。`;
+                        const confirmMsg = `[Plan Confirmed] planPath: ${planPath}\n\n${confirmMessage}`;
                         handleSendMessage(confirmMsg);
+                    }}
+                    onContentChange={(newContent) => {
+                        setMessages(prev => prev.map(msg =>
+                            msg.id === m.id
+                                ? { ...msg, planData: { ...msg.planData!, content: newContent } }
+                                : msg
+                        ));
                     }}
                     onRevise={(revisionNote) => {
                         const reviseMsg = `规划修改意见：${revisionNote}\n\n请根据上述意见重新生成章节规划。`;

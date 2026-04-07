@@ -5,8 +5,9 @@ interface PlanCardProps {
     chapterPath: string;
     content: string;
     confirmed?: boolean;
-    onConfirm: (planPath: string, chapterPath: string) => void;
+    onConfirm: (planPath: string, chapterPath: string, editedContent: string, confirmMessage: string) => void;
     onRevise: (revisionNote: string) => void;
+    onContentChange?: (newContent: string) => void;
 }
 
 export const PlanCard: React.FC<PlanCardProps> = ({
@@ -15,13 +16,16 @@ export const PlanCard: React.FC<PlanCardProps> = ({
     content,
     confirmed = false,
     onConfirm,
-    onRevise
+    onRevise,
+    onContentChange
 }) => {
     const [showReviseInput, setShowReviseInput] = useState(false);
     const [reviseNote, setReviseNote] = useState('');
+    const [editedContent, setEditedContent] = useState(content);
+    const [confirmMessage, setConfirmMessage] = useState('已确认章节规划，请按照规划开始编写章节正文。');
 
     const handleConfirm = () => {
-        onConfirm(planPath, chapterPath);
+        onConfirm(planPath, chapterPath, editedContent, confirmMessage);
     };
 
     const handleReviseSubmit = () => {
@@ -40,13 +44,31 @@ export const PlanCard: React.FC<PlanCardProps> = ({
                 <span className="voyaru-plan-card-path">{chapterPath}</span>
             </div>
             <div className="voyaru-plan-card-content">
-                <pre className="voyaru-plan-card-body">{content}</pre>
+                {confirmed ? (
+                    <pre className="voyaru-plan-card-body">{editedContent}</pre>
+                ) : (
+                    <textarea
+                        className="voyaru-plan-card-body voyaru-plan-card-body-editable"
+                        value={editedContent}
+                        onChange={e => {
+                            setEditedContent(e.target.value);
+                            onContentChange?.(e.target.value);
+                        }}
+                        rows={Math.max(6, editedContent.split('\n').length + 1)}
+                    />
+                )}
             </div>
             <div className="voyaru-plan-card-actions">
                 {confirmed ? (
                     <span style={{ color: 'var(--text-muted)', fontSize: '0.875em' }}>✓ 规划已确认</span>
                 ) : !showReviseInput ? (
                     <>
+                        <textarea
+                            className="voyaru-plan-card-confirm-msg"
+                            value={confirmMessage}
+                            onChange={e => setConfirmMessage(e.target.value)}
+                            rows={2}
+                        />
                         <button
                             className="voyaru-plan-card-btn voyaru-plan-card-btn-confirm"
                             onClick={handleConfirm}

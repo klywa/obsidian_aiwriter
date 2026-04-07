@@ -13,6 +13,7 @@ import { JAILBREAK } from './system/jailbreak';
 import { STYLE_GUIDE_INSTRUCTION } from './system/style_guide_instruction';
 import { REFERENCE_MODE_INSTRUCTION } from './system/reference_mode';
 import { PLAN_MODE_INSTRUCTION } from './system/plan_mode';
+import { WRITING_RULES } from './system/writing_rules';
 import { DEFAULT_AGENT_TOOLS } from './tools/agent_tools';
 import { FUNCTION_DEFINITIONS } from './tools/function_definitions';
 import { PLAN_TOOL_DEFINITIONS } from './tools/plan_tools';
@@ -30,7 +31,8 @@ export const DEFAULT_PROMPTS: PromptsConfig = {
         jailbreak: JAILBREAK,
         styleGuideInstruction: STYLE_GUIDE_INSTRUCTION,
         referenceModeInstruction: REFERENCE_MODE_INSTRUCTION,
-        planModeInstruction: PLAN_MODE_INSTRUCTION
+        planModeInstruction: PLAN_MODE_INSTRUCTION,
+        writingRules: WRITING_RULES
     },
     tools: {
         default: DEFAULT_AGENT_TOOLS,

@@ -127,6 +127,9 @@ export class AIService {
             finalPrompt += this.promptService.getReferenceModeInstruction();
         }
 
+        // Core writing behavior rules (always applied, not shown in settings UI)
+        finalPrompt += this.promptService.getWritingRules();
+
         // Plan Mode: append plan mode instruction
         if (this.settings.enablePlanMode) {
             finalPrompt += this.promptService.getPlanModeInstruction();
@@ -323,12 +326,19 @@ export class AIService {
      * e.g., "Chapters/第一回.md" → "Chapters/第一回.plan.md"
      */
     private getPlanFilePath(chapterPath: string): string {
-        const lastSlash = Math.max(chapterPath.lastIndexOf('/'), chapterPath.lastIndexOf('\\'));
-        const dir = lastSlash > -1 ? chapterPath.substring(0, lastSlash + 1) : '';
-        const filename = lastSlash > -1 ? chapterPath.substring(lastSlash + 1) : chapterPath;
+        // Strip .plan.md if already present to prevent .plan.plan.md double suffix
+        let cleanPath = chapterPath;
+        if (cleanPath.endsWith('.plan.md')) {
+            cleanPath = cleanPath.slice(0, -'.plan.md'.length) + '.md';
+        }
+
+        const lastSlash = Math.max(cleanPath.lastIndexOf('/'), cleanPath.lastIndexOf('\\'));
+        const dir = lastSlash > -1 ? cleanPath.substring(0, lastSlash + 1) : '';
+        const filename = lastSlash > -1 ? cleanPath.substring(lastSlash + 1) : cleanPath;
         const lastDot = filename.lastIndexOf('.');
         const base = lastDot > -1 ? filename.substring(0, lastDot) : filename;
-        return dir + base + '.plan.md';
+        // Store in vault-root Plan/ folder to avoid confusion with chapter files
+        return 'Plan/' + base + '.plan.md';
     }
 
     /**
@@ -1025,7 +1035,8 @@ export class AIService {
             
             if (functionCalls.length > 0) {
                  const functionResponses: Part[] = [];
-                 
+                 let stopAfterProposePlan = false;
+
                  for (const call of functionCalls) {
                      const { name, args, thoughtSignature } = call;
                      // New SDK args might be object directly? Yes.
@@ -1061,6 +1072,7 @@ export class AIService {
                                  },
                                  thoughtSignature: thoughtSignature
                              });
+                             stopAfterProposePlan = true;
                              continue;
                          }
                         if (name === "writeFile") {
@@ -1361,6 +1373,18 @@ export class AIService {
 
                  // Check if we're using SDK's ChatSession (should auto-handle signatures)
                  console.log(`[AIService] Using SDK ChatSession for function response - SDK should handle signature preservation automatically`);
+
+                 // If proposePlan was called, send the tool response to keep chat history consistent,
+                 // then STOP the loop. The AI must not continue until the user confirms via [Plan Confirmed].
+                 if (stopAfterProposePlan) {
+                     try {
+                         await chat.sendMessage(functionResponses);
+                     } catch (e) {
+                         console.warn('[PlanMode] Failed to send proposePlan tool response to chat history:', e);
+                     }
+                     return; // Stop the generator — wait for user to send [Plan Confirmed]
+                 }
+
                  msgToSend = functionResponses;
                  continue;
             }

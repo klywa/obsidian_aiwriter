@@ -2762,12 +2762,52 @@ Design Tokens are imported first to establish the design system foundation.
     line-height: 1.6;
 }
 
+.voyaru-plan-card-body-editable {
+    width: 100%;
+    resize: vertical;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 4px;
+    background: transparent;
+    box-sizing: border-box;
+    transition: border-color 0.15s;
+}
+
+.voyaru-plan-card-body-editable:hover {
+    border-color: var(--background-modifier-border);
+}
+
+.voyaru-plan-card-body-editable:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+    background: var(--background-primary);
+}
+
+.voyaru-plan-card-confirm-msg {
+    width: 100%;
+    resize: vertical;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    padding: 6px 8px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    font-size: 0.875em;
+    box-sizing: border-box;
+    transition: border-color 0.15s;
+}
+
+.voyaru-plan-card-confirm-msg:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+    background: var(--background-primary);
+}
+
 .voyaru-plan-card-actions {
     display: flex;
+    flex-direction: column;
     gap: 8px;
     padding: 8px 12px;
     border-top: 1px solid var(--background-modifier-border);
-    flex-wrap: wrap;
 }
 
 .voyaru-plan-card-btn {

@@ -18,7 +18,12 @@
       "Bash(git commit -m 'refactor: migrate LocalEditModal, LocalEditStatusModal, and LogModal to extend BaseModal:*)",
       "Bash(cd /d \"D:\\\\Vaults\\\\Writer\\\\.obsidian\\\\plugins\\\\obsidian_aiwriter\")",
       "Bash(echo \"EXIT_CODE: $?\")",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(npm run:*)",
+      "Bash(grep -r \"规划模式\\\\|proposePlan\" src/*.ts src/**/*.ts)",
+      "Bash(node /tmp/style_check.js)",
+      "Bash(echo \"EXIT:$?\")"
     ]
   }
 }

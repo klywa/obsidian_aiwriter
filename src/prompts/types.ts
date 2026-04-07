@@ -55,6 +55,7 @@ export interface PromptsConfig {
         styleGuideInstruction: TemplateConfig;
         referenceModeInstruction: I18nText;
         planModeInstruction: I18nText;
+        writingRules: I18nText;
     };
     tools: {
         default: ToolDefinition[];

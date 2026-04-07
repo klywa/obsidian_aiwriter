@@ -156,6 +156,17 @@ export class PromptService {
     }
 
     /**
+     * Get core writing behavior rules (always appended, not shown in settings UI)
+     */
+    getWritingRules(): string {
+        if (!this.prompts) {
+            throw new Error('Prompts not loaded');
+        }
+
+        return this.getText(this.prompts.system.writingRules);
+    }
+
+    /**
      * Get default agent tools
      */
     getDefaultTools(): AgentTool[] {
