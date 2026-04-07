@@ -64,8 +64,9 @@ export default class VoyaruPlugin extends Plugin {
 
 		// Ribbon Icon - Settings
 		this.addRibbonIcon('settings', '插件设置', () => {
-			(this.app as any).setting.open();
-			(this.app as any).setting.openTabById('voyaru-plugin');
+			const setting = (this.app as any).setting;
+			setting.open();
+			setting.openTabById('voyaru-plugin');
 		});
 
 		// Status Bar
