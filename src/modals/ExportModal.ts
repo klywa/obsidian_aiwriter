@@ -1,8 +1,9 @@
-import { App, Modal, Setting, TFile, Notice } from "obsidian";
+import { App, Setting, TFile, Notice } from "obsidian";
+import { BaseModal } from "./BaseModal";
 import { FSService } from "../services/fs_service";
 import { FileSuggest } from "../components/FileSuggest";
 
-export class ExportModal extends Modal {
+export class ExportModal extends BaseModal {
     private content: string;
     private fsService: FSService;
     private selectedMode: 'overwrite' | 'append' = 'append';
@@ -15,6 +16,7 @@ export class ExportModal extends Modal {
     }
 
     onOpen() {
+        super.onOpen();
         const { contentEl } = this;
         contentEl.empty();
         contentEl.addClass("export-modal");

@@ -1,8 +1,9 @@
-import { App, Modal, Notice } from "obsidian";
+import { App, Notice } from "obsidian";
+import { BaseModal } from "./BaseModal";
 import { QueryHistoryItem, AgentTool } from "../settings";
 import { ToolsManagerModal } from "./ToolsManagerModal";
 
-export class HistoryPromptModal extends Modal {
+export class HistoryPromptModal extends BaseModal {
     private queryHistory: QueryHistoryItem[];
     private tools: AgentTool[];
     private onSelect: (query: string, referencedFiles: string[]) => void;
@@ -23,6 +24,7 @@ export class HistoryPromptModal extends Modal {
     }
 
     onOpen() {
+        super.onOpen();
         const { contentEl } = this;
         contentEl.empty();
         contentEl.addClass("history-prompt-modal");
