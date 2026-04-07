@@ -1929,6 +1929,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     planPath={m.planData.planPath}
                     chapterPath={m.planData.chapterPath}
                     content={m.planData.content}
+                    confirmed={m.planData.confirmed}
                     onConfirm={(planPath, chapterPath) => {
                         setMessages(prev => prev.map(msg =>
                             msg.id === m.id

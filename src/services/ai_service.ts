@@ -323,9 +323,12 @@ export class AIService {
      * e.g., "Chapters/第一回.md" → "Chapters/第一回.plan.md"
      */
     private getPlanFilePath(chapterPath: string): string {
-        const lastDot = chapterPath.lastIndexOf('.');
-        const base = lastDot > -1 ? chapterPath.substring(0, lastDot) : chapterPath;
-        return base + '.plan.md';
+        const lastSlash = Math.max(chapterPath.lastIndexOf('/'), chapterPath.lastIndexOf('\\'));
+        const dir = lastSlash > -1 ? chapterPath.substring(0, lastSlash + 1) : '';
+        const filename = lastSlash > -1 ? chapterPath.substring(lastSlash + 1) : chapterPath;
+        const lastDot = filename.lastIndexOf('.');
+        const base = lastDot > -1 ? filename.substring(0, lastDot) : filename;
+        return dir + base + '.plan.md';
     }
 
     /**
@@ -623,10 +626,10 @@ export class AIService {
         // Load function declarations from PromptService
         const functionDeclarations = this.promptService.getAllToolDefinitions();
 
-        // Filter out editFile if disabled in settings
-        const filteredDeclarations = this.settings.enableEditFileTool
-            ? functionDeclarations
-            : functionDeclarations.filter(fd => fd.name !== 'editFile');
+        // Filter out tools that are disabled in settings
+        const filteredDeclarations = functionDeclarations
+            .filter(fd => fd.name !== 'editFile' || this.settings.enableEditFileTool)
+            .filter(fd => fd.name !== 'proposePlan' || this.settings.enablePlanMode);
 
         const tools: Tool[] = [
             {

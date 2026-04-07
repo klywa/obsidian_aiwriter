@@ -4,6 +4,7 @@ interface PlanCardProps {
     planPath: string;
     chapterPath: string;
     content: string;
+    confirmed?: boolean;
     onConfirm: (planPath: string, chapterPath: string) => void;
     onRevise: (revisionNote: string) => void;
 }
@@ -12,6 +13,7 @@ export const PlanCard: React.FC<PlanCardProps> = ({
     planPath,
     chapterPath,
     content,
+    confirmed = false,
     onConfirm,
     onRevise
 }) => {
@@ -41,7 +43,9 @@ export const PlanCard: React.FC<PlanCardProps> = ({
                 <pre className="voyaru-plan-card-body">{content}</pre>
             </div>
             <div className="voyaru-plan-card-actions">
-                {!showReviseInput ? (
+                {confirmed ? (
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.875em' }}>✓ 规划已确认</span>
+                ) : !showReviseInput ? (
                     <>
                         <button
                             className="voyaru-plan-card-btn voyaru-plan-card-btn-confirm"
