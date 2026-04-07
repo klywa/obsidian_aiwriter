@@ -1,6 +1,7 @@
-import { App, Modal } from "obsidian";
+import { App } from "obsidian";
+import { BaseModal } from "./BaseModal";
 
-export class LogModal extends Modal {
+export class LogModal extends BaseModal {
     private logs: any;
 
     constructor(app: App, logs: any) {
@@ -9,6 +10,7 @@ export class LogModal extends Modal {
     }
 
     onOpen() {
+        super.onOpen();
         const { contentEl } = this;
         contentEl.empty();
         contentEl.addClass("log-modal");
@@ -59,6 +61,7 @@ export class LogModal extends Modal {
     }
 
     onClose() {
+        super.onClose();
         const { contentEl } = this;
         contentEl.empty();
     }

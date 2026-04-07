@@ -1,6 +1,7 @@
-import { App, Modal } from "obsidian";
+import { App } from "obsidian";
+import { BaseModal } from "./BaseModal";
 
-export class LocalEditStatusModal extends Modal {
+export class LocalEditStatusModal extends BaseModal {
     private isActive: boolean = false;
     private statusText: string = "正在生成修改...";
     private statusEl: HTMLElement | null = null;
@@ -11,6 +12,7 @@ export class LocalEditStatusModal extends Modal {
     }
 
     onOpen() {
+        super.onOpen();
         this.isActive = true;
         const { contentEl } = this;
         contentEl.empty();
@@ -42,6 +44,7 @@ export class LocalEditStatusModal extends Modal {
     }
 
     onClose() {
+        super.onClose();
         this.isActive = false;
         this.statusEl = null;
     }

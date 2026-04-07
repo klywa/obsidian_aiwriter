@@ -1,6 +1,7 @@
-import { App, Modal, Notice } from "obsidian";
+import { App, Notice } from "obsidian";
+import { BaseModal } from "./BaseModal";
 
-export class LocalEditModal extends Modal {
+export class LocalEditModal extends BaseModal {
     private onSubmit: (query: string) => void;
     private query: string = "";
     private selectedText: string;
@@ -12,6 +13,7 @@ export class LocalEditModal extends Modal {
     }
 
     onOpen() {
+        super.onOpen();
         const { contentEl } = this;
         contentEl.empty();
         contentEl.addClass("local-edit-modal");
@@ -86,6 +88,7 @@ export class LocalEditModal extends Modal {
     }
 
     onClose() {
+        super.onClose();
         const { contentEl } = this;
         contentEl.empty();
     }
