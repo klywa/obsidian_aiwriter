@@ -2903,3 +2903,254 @@ Design Tokens are imported first to establish the design system foundation.
 .voyaru-plan-mode-toggle:hover {
     opacity: 0.85;
 }
+/* ============================================================ */
+/* Annotation Mode - Phase 3                                    */
+/* ============================================================ */
+
+/* Flash highlight when clicking an annotation card */
+.voyaru-annotation-flash {
+    background-color: rgba(255, 170, 0, 0.6);
+    border-radius: 2px;
+    animation: voyaru-flash-pulse 0.5s ease-in-out 3;
+}
+
+@keyframes voyaru-flash-pulse {
+    0%, 100% { background-color: rgba(255, 170, 0, 0.6); }
+    50%       { background-color: rgba(255, 170, 0, 0.1); }
+}
+
+/* Permanent annotation highlight in editor */
+.voyaru-annotation-highlight {
+    background-color: rgba(255, 213, 79, 0.35);
+    border-bottom: 2px solid rgba(255, 170, 0, 0.7);
+    cursor: pointer;
+    border-radius: 2px;
+}
+
+.voyaru-annotation-highlight:hover {
+    background-color: rgba(255, 213, 79, 0.55);
+}
+
+/* AddAnnotationModal */
+.voyaru-add-annotation-modal .voyaru-annotation-target-preview {
+    padding: 8px 10px;
+    background: var(--background-secondary);
+    border-radius: 4px;
+    margin-bottom: 12px;
+    font-size: 0.875em;
+}
+
+.voyaru-annotation-label {
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-right: 4px;
+}
+
+.voyaru-annotation-target-text {
+    color: var(--text-normal);
+    font-style: italic;
+}
+
+.voyaru-annotation-suggestion-input {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-family: var(--font-text);
+    resize: vertical;
+    box-sizing: border-box;
+    margin-bottom: 12px;
+}
+
+.voyaru-annotation-modal-buttons {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+/* Annotation Panel */
+.voyaru-annotation-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+
+.voyaru-annotation-panel-actions {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    flex-shrink: 0;
+}
+
+.voyaru-annotation-apply-all-btn {
+    width: 100%;
+    padding: 6px 10px;
+    background: var(--color-accent);
+    color: var(--text-on-accent);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.82em;
+    font-weight: 600;
+    transition: opacity 0.15s;
+}
+
+.voyaru-annotation-apply-all-btn:hover {
+    opacity: 0.85;
+}
+
+.voyaru-annotation-panel-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    flex-shrink: 0;
+}
+
+.voyaru-annotation-panel-title {
+    font-weight: 600;
+    color: var(--text-normal);
+}
+
+.voyaru-annotation-panel-count {
+    font-size: 0.75em;
+    background: var(--color-accent);
+    color: var(--text-on-accent);
+    padding: 1px 6px;
+    border-radius: 10px;
+}
+
+.voyaru-annotation-panel-file {
+    font-size: 0.75em;
+    color: var(--text-muted);
+    margin-left: auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.voyaru-annotation-panel-list {
+    overflow-y: auto;
+    flex: 1;
+    padding: 8px;
+}
+
+.voyaru-annotation-panel-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 200px;
+    color: var(--text-muted);
+    font-size: 0.875em;
+}
+
+.voyaru-annotation-panel-hint {
+    font-size: 0.8em;
+    text-align: center;
+}
+
+.voyaru-annotation-edit-form {
+    border: 1px solid var(--color-accent);
+    border-radius: 4px;
+    padding: 8px;
+    margin-bottom: 8px;
+}
+
+.voyaru-annotation-edit-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+/* Annotation Cards */
+.voyaru-annotation-card {
+    border: 1px solid var(--background-modifier-border);
+    border-left: 3px solid var(--color-yellow);
+    border-radius: 4px;
+    margin-bottom: 8px;
+    padding: 8px 10px;
+    background: var(--background-primary);
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.voyaru-annotation-card:hover,
+.voyaru-annotation-card.active {
+    box-shadow: 0 0 0 2px var(--color-accent);
+    border-color: var(--color-accent);
+}
+
+.voyaru-annotation-card.global {
+    border-left-color: var(--color-blue);
+}
+
+.voyaru-annotation-card-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.voyaru-annotation-type-badge {
+    font-size: 0.72em;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: rgba(255, 213, 79, 0.3);
+    color: var(--text-normal);
+}
+
+.voyaru-annotation-type-badge.global {
+    background: rgba(100, 149, 237, 0.25);
+}
+
+.voyaru-annotation-target {
+    font-size: 0.8em;
+    color: var(--text-muted);
+    font-style: italic;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 180px;
+}
+
+.voyaru-annotation-suggestion {
+    font-size: 0.875em;
+    color: var(--text-normal);
+    line-height: 1.5;
+    margin-bottom: 8px;
+}
+
+.voyaru-annotation-card-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.voyaru-ann-btn {
+    font-size: 0.78em;
+    padding: 3px 8px;
+    border-radius: 3px;
+    border: 1px solid var(--background-modifier-border);
+    cursor: pointer;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    transition: opacity 0.15s;
+}
+
+.voyaru-ann-btn:hover { opacity: 0.8; }
+
+.voyaru-ann-btn-apply {
+    background: var(--color-accent);
+    color: var(--text-on-accent);
+    border-color: var(--color-accent);
+}
+
+.voyaru-ann-btn-dismiss {
+    color: var(--text-error);
+    border-color: var(--text-error);
+}

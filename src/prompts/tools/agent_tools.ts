@@ -23,5 +23,10 @@ export const DEFAULT_AGENT_TOOLS = [
         id: "update-outline",
         name: { zh: "更新大纲", en: null },
         prompt: { zh: "根据当前已有章节，更新大纲文文档（大纲）。若没有人设文档，新建大纲，outlines目录下。", en: null }
+    },
+    {
+        id: "review-and-annotate",
+        name: { zh: "审阅并标注", en: null },
+        prompt: { zh: "仔细阅读当前指定的章节，生成修改建议批注。对于措辞、表达等局部问题，使用 local 类型批注并给出具体的修改建议文字；对于节奏、结构、主题等全局问题，使用 global 类型批注并描述整体要求。批注要具体、可执行。", en: null }
     }
 ];

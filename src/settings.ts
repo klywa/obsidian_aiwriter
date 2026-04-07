@@ -106,6 +106,7 @@ export interface VoyaruSettings {
     enablePostCheck: boolean;
     enableEditFileTool: boolean;    // 启用 editFile 工具
     enablePlanMode: boolean;     // 启用章节规划模式，写作前先生成并确认章节规划
+    enableAnnotationMode: boolean;  // 启用批注高亮显示（需重新加载插件生效）
     sessions: Session[];
     lastSessionId: string | null;
     fontSize: number;
@@ -157,6 +158,7 @@ export const DEFAULT_SETTINGS: VoyaruSettings = {
     enablePostCheck: true,
     enableEditFileTool: true,
     enablePlanMode: false,
+    enableAnnotationMode: true,
     queryHistory: [],
     sendWithShiftEnter: false,
     // System prompt is now loaded from prompts.json via PromptService
@@ -412,6 +414,16 @@ export class VoyaruSettingTab extends PluginSettingTab {
                 .setValue(this.plugin.settings.enablePlanMode)
                 .onChange(async (value) => {
                     this.plugin.settings.enablePlanMode = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('批注高亮显示')
+            .setDesc('在编辑器中高亮显示被批注的文字（需要重新加载插件后生效）。')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableAnnotationMode)
+                .onChange(async (value) => {
+                    this.plugin.settings.enableAnnotationMode = value;
                     await this.plugin.saveSettings();
                 }));
 

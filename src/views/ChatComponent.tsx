@@ -54,6 +54,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const hasReceivedPriorTextRef = useRef(false); // 跟踪在此前是否已经收到过文本（用于判断是否应该重新显示等待消息）
     const lastChunkTypeRef = useRef<string | null>(null); // 跟踪上一个chunk的类型（用于判断"文字→工具调用"的情况）
     const [planModeActive, setPlanModeActive] = useState<boolean>(plugin.settings.enablePlanMode);
+    const skipPlanModeOnceRef = useRef<boolean>(false);
 
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -1123,7 +1124,9 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             const historyForRequest = isSingleTurnMode ? [] : historyToUse;
 
             console.log('Calling streamChat with history length:', historyForRequest.length, isSingleTurnMode ? '(single-turn mode)' : '');
-            const stream = plugin.aiService.streamChat(currentSessionId, historyForRequest, messageContent, newUserMsg.referencedFiles, abortControllerRef.current.signal);
+            const skipPlanMode = skipPlanModeOnceRef.current;
+            skipPlanModeOnceRef.current = false;
+            const stream = plugin.aiService.streamChat(currentSessionId, historyForRequest, messageContent, newUserMsg.referencedFiles, abortControllerRef.current.signal, undefined, skipPlanMode ? { skipPlanMode: true } : undefined);
 
             let currentResponseId = `msg-${Date.now()}-response`;
             let currentResponseContent = ""; // Accumulate text for the current message ID
@@ -1510,6 +1513,21 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             // 确保最终状态被保存（通过 useEffect 自动触发保存）
         }
     };
+
+    // Listen for annotation revision requests from the annotation panel
+    useEffect(() => {
+        if (!containerEl) return;
+        const handler = (e: CustomEvent) => {
+            const { message, filePath } = e.detail as { message: string; filePath: string };
+            // Annotation revision always bypasses plan mode — user wants direct modification
+            skipPlanModeOnceRef.current = true;
+            handleSendMessage(message, [filePath]);
+        };
+        containerEl.addEventListener('voyaru-annotation-revision', handler as EventListener);
+        return () => {
+            containerEl.removeEventListener('voyaru-annotation-revision', handler as EventListener);
+        };
+    }, [containerEl, handleSendMessage]);
 
     const handleRegenerate = async (messageId: string) => {
         // Find the index of the message to regenerate

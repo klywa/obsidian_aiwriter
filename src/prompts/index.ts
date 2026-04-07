@@ -17,6 +17,7 @@ import { WRITING_RULES } from './system/writing_rules';
 import { DEFAULT_AGENT_TOOLS } from './tools/agent_tools';
 import { FUNCTION_DEFINITIONS } from './tools/function_definitions';
 import { PLAN_TOOL_DEFINITIONS } from './tools/plan_tools';
+import { ANNOTATION_TOOL_DEFINITIONS } from './tools/annotation_tools';
 import { POST_CHECK_SYSTEM_PROMPT } from './post_check/system_prompt';
 import { POST_CHECK_USER_MESSAGE } from './post_check/user_message';
 import { DEFAULT_POST_CHECK_ITEMS } from './post_check/default_items';
@@ -36,7 +37,7 @@ export const DEFAULT_PROMPTS: PromptsConfig = {
     },
     tools: {
         default: DEFAULT_AGENT_TOOLS,
-        functionDefinitions: { ...FUNCTION_DEFINITIONS, ...PLAN_TOOL_DEFINITIONS }
+        functionDefinitions: { ...FUNCTION_DEFINITIONS, ...PLAN_TOOL_DEFINITIONS, ...ANNOTATION_TOOL_DEFINITIONS }
     },
     postCheck: {
         systemPrompt: POST_CHECK_SYSTEM_PROMPT,

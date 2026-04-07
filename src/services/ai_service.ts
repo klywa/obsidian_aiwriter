@@ -130,11 +130,6 @@ export class AIService {
         // Core writing behavior rules (always applied, not shown in settings UI)
         finalPrompt += this.promptService.getWritingRules();
 
-        // Plan Mode: append plan mode instruction
-        if (this.settings.enablePlanMode) {
-            finalPrompt += this.promptService.getPlanModeInstruction();
-        }
-
         return finalPrompt;
     }
 
@@ -525,7 +520,7 @@ export class AIService {
         return fallback;
     }
 
-    async *streamChat(sessionId: string, history: Content[], newMessage: string, referencedFiles: string[] = [], abortSignal?: AbortSignal, systemInstructionOverride?: string): AsyncGenerator<any, void, unknown> {
+    async *streamChat(sessionId: string, history: Content[], newMessage: string, referencedFiles: string[] = [], abortSignal?: AbortSignal, systemInstructionOverride?: string, options?: { skipPlanMode?: boolean }): AsyncGenerator<any, void, unknown> {
         try {
         // 检查API Key（使用provider而不是旧的settings.apiKey）
         const provider = this.getActiveProvider();
@@ -551,7 +546,12 @@ export class AIService {
         }
 
         // Prepare System Prompt and File Tree
-        const baseSystemPrompt = systemInstructionOverride || await this.getFullSystemPrompt();
+        let baseSystemPrompt = systemInstructionOverride || await this.getFullSystemPrompt();
+        // Plan Mode instruction: skip when called from annotation revision
+        const effectivePlanMode = this.settings.enablePlanMode && !options?.skipPlanMode;
+        if (effectivePlanMode) {
+            baseSystemPrompt += this.promptService.getPlanModeInstruction();
+        }
         const fileTree = await this.getProjectFileTree();
         const fullSystemPrompt = baseSystemPrompt + (fileTree ? `\n\n### Project File Tree (Always Available)\n\`\`\`\n${fileTree}\n\`\`\`\n` : "");
 
@@ -623,7 +623,7 @@ export class AIService {
         // Filter out tools that are disabled in settings
         const filteredDeclarations = functionDeclarations
             .filter(fd => fd.name !== 'editFile' || this.settings.enableEditFileTool)
-            .filter(fd => fd.name !== 'proposePlan' || this.settings.enablePlanMode);
+            .filter(fd => fd.name !== 'proposePlan' || effectivePlanMode);
 
         const tools: Tool[] = [
             {
@@ -1327,6 +1327,22 @@ export class AIService {
 
                             } catch (e: any) {
                                 output = `Error executing editFile: ${e.message}`;
+                            }
+                        } else if (name === "addAnnotation") {
+                            const { path, type, target, suggestion } = toolArgs as {
+                                path: string;
+                                type: 'local' | 'global';
+                                target: string;
+                                suggestion: string;
+                            };
+                            try {
+                                const currentContent = await this.fs.readFile(path);
+                                const { addAnnotationToText } = await import('../editor/annotation_parser');
+                                const updatedContent = addAnnotationToText(currentContent, type, target, suggestion);
+                                await this.fs.writeFile(path, updatedContent);
+                                output = `Annotation added to ${path}: [${type}] "${target ? target.substring(0, 30) : 'global'}"`;
+                            } catch (e: any) {
+                                output = `Failed to add annotation to ${path}: ${e.message}`;
                             }
                         } else {
                             output = "Unknown tool.";

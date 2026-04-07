@@ -1,4 +1,4 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, WorkspaceLeaf, Menu } from 'obsidian';
+import { App, Editor, MarkdownView, Modal, Notice, Plugin, WorkspaceLeaf, Menu, TFile } from 'obsidian';
 import { DEFAULT_SETTINGS, VoyaruSettings, VoyaruSettingTab } from "./settings";
 import { ChatView, VIEW_TYPE_CHAT } from "./views/chat_view";
 import { AIService } from "./services/ai_service";
@@ -6,6 +6,10 @@ import { FSService } from "./services/fs_service";
 import { PromptService } from "./services/prompt_service";
 import { LocalEditModal } from "./modals/LocalEditModal";
 import { LocalEditStatusModal } from "./modals/LocalEditStatusModal";
+import { getAnnotationExtensions } from "./editor/annotation_decorations";
+import { AnnotationView, VIEW_TYPE_ANNOTATION } from "./views/annotation_view";
+import { AddAnnotationModal } from "./modals/AddAnnotationModal";
+import { addAnnotationToText } from "./editor/annotation_parser";
 
 export default class VoyaruPlugin extends Plugin {
 	settings: VoyaruSettings;
@@ -56,6 +60,17 @@ export default class VoyaruPlugin extends Plugin {
             VIEW_TYPE_CHAT,
             (leaf) => new ChatView(leaf, this)
         );
+
+        // Register Annotation View (sidebar panel)
+        this.registerView(
+            VIEW_TYPE_ANNOTATION,
+            (leaf) => new AnnotationView(leaf, this)
+        );
+
+        // Register CM6 editor extension for annotation highlighting
+        if (this.settings.enableAnnotationMode) {
+            this.registerEditorExtension(getAnnotationExtensions());
+        }
 
 		// Ribbon Icon
 		this.addRibbonIcon('bot', 'Voyaru Agent', (evt: MouseEvent) => {
@@ -114,6 +129,13 @@ export default class VoyaruPlugin extends Plugin {
 			}
 		});
 
+        // Command to open annotation panel
+        this.addCommand({
+            id: 'open-annotation-panel',
+            name: '打开批注面板',
+            callback: () => this.activateAnnotationView()
+        });
+
         // Context Menu: Add to Context and Local Edit
         this.registerEvent(
             this.app.workspace.on("editor-menu", (menu: Menu, editor: Editor, view: MarkdownView) => {
@@ -157,6 +179,33 @@ export default class VoyaruPlugin extends Plugin {
                                 new LocalEditModal(this.app, selection, async (query: string) => {
                                     await this.performLocalEdit(file.path, startLine, endLine, selection, query, editor);
                                 }).open();
+                            });
+                    });
+
+                    menu.addItem((item) => {
+                        item
+                            .setTitle("添加批注")
+                            .setIcon("message-square")
+                            .onClick(async () => {
+                                if (!file) return;
+                                new AddAnnotationModal(
+                                    this.app,
+                                    selection,
+                                    async (suggestion: string, type: 'local' | 'global') => {
+                                        try {
+                                            const vaultFile = this.app.vault.getAbstractFileByPath(file.path);
+                                            if (!vaultFile || !(vaultFile instanceof TFile)) return;
+                                            const content = await this.app.vault.read(vaultFile);
+                                            const updated = addAnnotationToText(content, type, selection, suggestion);
+                                            await this.app.vault.modify(vaultFile, updated);
+                                            new Notice('批注已添加');
+                                            // Auto-open annotation panel
+                                            await this.activateAnnotationView();
+                                        } catch (e: any) {
+                                            new Notice('添加批注失败: ' + e.message);
+                                        }
+                                    }
+                                ).open();
                             });
                     });
                 } else if (file) {
@@ -482,6 +531,16 @@ export default class VoyaruPlugin extends Plugin {
             this.localEditStatusModal.setActive(false);
         }
         new Notice("已取消局部修改");
+    }
+
+    async activateAnnotationView() {
+        const { workspace } = this.app;
+        let leaf = workspace.getLeavesOfType(VIEW_TYPE_ANNOTATION)[0];
+        if (!leaf) {
+            leaf = workspace.getRightLeaf(false) || workspace.getLeaf('split');
+            await leaf.setViewState({ type: VIEW_TYPE_ANNOTATION, active: true });
+        }
+        workspace.revealLeaf(leaf);
     }
 
     async activateView() {
