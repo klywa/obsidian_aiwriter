@@ -113,6 +113,7 @@ export class ExportModal extends BaseModal {
     }
 
     onClose() {
+        super.onClose();
         const { contentEl } = this;
         contentEl.empty();
     }

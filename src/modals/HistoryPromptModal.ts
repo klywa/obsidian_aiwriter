@@ -141,6 +141,7 @@ export class HistoryPromptModal extends BaseModal {
     }
 
     onClose() {
+        super.onClose();
         const { contentEl } = this;
         contentEl.empty();
     }
