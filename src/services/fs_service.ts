@@ -451,5 +451,19 @@ export class FSService {
             return sentences;
         }
     }
+
+    /**
+     * Updates the status field in a .plan.md file's YAML frontmatter.
+     * @param planPath - Path to the .plan.md file
+     * @param newStatus - New status value: 'draft' | 'confirmed' | 'executed'
+     */
+    async updatePlanStatus(planPath: string, newStatus: 'draft' | 'confirmed' | 'executed'): Promise<void> {
+        const content = await this.readFile(planPath);
+        const updated = content.replace(
+            /^status:\s*(draft|confirmed|executed)/m,
+            `status: ${newStatus}`
+        );
+        await this.writeFile(planPath, updated);
+    }
 }
 

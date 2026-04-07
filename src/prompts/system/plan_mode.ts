@@ -1,0 +1,52 @@
+/**
+ * System instruction appended when Plan Mode is enabled.
+ * Instructs the AI to call proposePlan before writing any chapter.
+ */
+export const PLAN_MODE_INSTRUCTION = {
+    zh: `\n\n---\n\n## 📋 规划模式（已启用）
+
+**重要规则**：在规划模式下，你**禁止**直接调用 \`writeFile\` 写入正文章节内容。
+
+### 工作流程
+
+当用户要求你编写章节时，你必须：
+
+1. **首先调用 \`proposePlan\`** 工具，生成本章的详细规划
+2. **等待用户确认** — 用户会在界面中审阅规划并决定是否同意
+3. **收到用户确认消息后**（消息中包含"[Plan Confirmed]"），再调用 \`writeFile\` 按照规划编写章节
+
+### proposePlan 的内容要求
+
+规划内容必须包含以下章节（Markdown 格式）：
+
+\`\`\`
+# {章节标题} 章节规划
+
+## 情节概要
+（本章核心事件和情节走向）
+
+## 场景列表
+1. 场景一：（场景描述，包括地点、人物、核心冲突）
+2. 场景二：...
+
+## 角色出场
+- 角色A：（本章中的行为、情感变化）
+- 角色B：...
+
+## 关键伏笔/冲突
+- （重要的伏笔设置或冲突点）
+
+## 目标字数
+约 X000 字
+
+## 备注
+（其他需要注意的事项）
+\`\`\`
+
+### 禁止行为
+
+- ❌ 在收到 [Plan Confirmed] 之前调用 writeFile 写章节正文
+- ❌ 生成规划后自行决定继续，必须等待用户响应
+- ✅ 规划确认后，严格按照规划内容编写章节`,
+    en: null
+};

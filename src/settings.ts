@@ -47,6 +47,12 @@ export interface Message {
     startTime?: number;
     endTime?: number;
     expanded?: boolean;
+    planData?: {
+        planPath: string;
+        chapterPath: string;
+        content: string;
+        confirmed: boolean;
+    };
 }
 
 export interface Session {
@@ -98,6 +104,7 @@ export interface VoyaruSettings {
     postCheckItems: PostCheckItem[];
     enablePostCheck: boolean;
     enableEditFileTool: boolean;    // 启用 editFile 工具
+    enablePlanMode: boolean;     // 启用章节规划模式，写作前先生成并确认章节规划
     sessions: Session[];
     lastSessionId: string | null;
     fontSize: number;
@@ -148,6 +155,7 @@ export const DEFAULT_SETTINGS: VoyaruSettings = {
 
     enablePostCheck: true,
     enableEditFileTool: true,
+    enablePlanMode: false,
     queryHistory: [],
     sendWithShiftEnter: false,
     // System prompt is now loaded from prompts.json via PromptService
@@ -393,6 +401,16 @@ export class VoyaruSettingTab extends PluginSettingTab {
                 .setValue(this.plugin.settings.enableEditFileTool)
                 .onChange(async (value) => {
                     this.plugin.settings.enableEditFileTool = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('章节规划模式')
+            .setDesc('启用后，AI 在编写章节正文前会先生成章节规划，等待你确认后再开始写作。可在聊天窗口中快速切换。')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enablePlanMode)
+                .onChange(async (value) => {
+                    this.plugin.settings.enablePlanMode = value;
                     await this.plugin.saveSettings();
                 }));
 

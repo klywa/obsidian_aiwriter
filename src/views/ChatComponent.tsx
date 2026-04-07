@@ -14,6 +14,7 @@ import { LoadingIndicator } from '../components/LoadingIndicator';
 import { ErrorMessage } from '../components/ErrorMessage';
 import { Toast } from '../components/Toast';
 import { WaitingMessage } from '../components/WaitingMessage';
+import { PlanCard } from '../components/PlanCard';
 
 export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerEl?: HTMLElement }) => {
     const [sessions, setSessions] = useState<Session[]>([]);
@@ -52,6 +53,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const waitingMessageClearedRef = useRef(false); // 跟踪等待消息是否已被清除（只在收到 text chunk 时清除）
     const hasReceivedPriorTextRef = useRef(false); // 跟踪在此前是否已经收到过文本（用于判断是否应该重新显示等待消息）
     const lastChunkTypeRef = useRef<string | null>(null); // 跟踪上一个chunk的类型（用于判断"文字→工具调用"的情况）
+    const [planModeActive, setPlanModeActive] = useState<boolean>(plugin.settings.enablePlanMode);
 
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -1406,6 +1408,20 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     } else if (chunk.type === 'history_update') {
                         const updatedHistory = chunk.history;
                         setChatHistory(updatedHistory);
+                    } else if (chunk.type === 'plan_proposal') {
+                        const planMsg: Message = {
+                            id: `plan-${Date.now()}-${Math.random()}`,
+                            role: 'model',
+                            type: 'text',
+                            content: '__PLAN_PROPOSAL__',
+                            planData: {
+                                planPath: chunk.planPath,
+                                chapterPath: chunk.chapterPath,
+                                content: chunk.content,
+                                confirmed: false
+                            }
+                        };
+                        setMessages(prev => [...prev, planMsg]);
                     } else if (chunk.type === 'debug_info') {
                         // Update the user message with debug info
                         const debugData = chunk.debugData;
@@ -1903,6 +1919,31 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         // Render Tool Call Items
         if (m.type === 'tool_result') {
             return <ToolCallItem key={m.id} message={m} onToggleExpand={handleToggleToolExpand} plugin={plugin} />;
+        }
+
+        // Plan proposal message
+        if (m.content === '__PLAN_PROPOSAL__' && m.planData) {
+            return (
+                <PlanCard
+                    key={m.id}
+                    planPath={m.planData.planPath}
+                    chapterPath={m.planData.chapterPath}
+                    content={m.planData.content}
+                    onConfirm={(planPath, chapterPath) => {
+                        setMessages(prev => prev.map(msg =>
+                            msg.id === m.id
+                                ? { ...msg, planData: { ...msg.planData!, confirmed: true } }
+                                : msg
+                        ));
+                        const confirmMsg = `[Plan Confirmed] planPath: ${planPath}\n\n已确认章节规划，请按照规划开始编写章节正文。`;
+                        handleSendMessage(confirmMsg);
+                    }}
+                    onRevise={(revisionNote) => {
+                        const reviseMsg = `规划修改意见：${revisionNote}\n\n请根据上述意见重新生成章节规划。`;
+                        handleSendMessage(reviseMsg);
+                    }}
+                />
+            );
         }
 
         // Normal Message (Text, Thinking, Error)
@@ -2410,6 +2451,19 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
 
                 {/* Toolbar Buttons */}
                 <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                    {/* Plan Mode Toggle */}
+                    <button
+                        className={`voyaru-plan-mode-toggle${planModeActive ? ' active' : ''}`}
+                        title={planModeActive ? '规划模式已启用（点击关闭）' : '规划模式已关闭（点击启用）'}
+                        onClick={async () => {
+                            const newValue = !planModeActive;
+                            setPlanModeActive(newValue);
+                            plugin.settings.enablePlanMode = newValue;
+                            await plugin.saveSettings();
+                        }}
+                    >
+                        📋
+                    </button>
                     {/* History Prompt Button */}
                     <button 
                         className="clickable-icon"

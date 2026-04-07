@@ -2716,3 +2716,144 @@ Design Tokens are imported first to establish the design system foundation.
     50% { transform: scale(1); opacity: 1; }
     100% { transform: scale(0.6); opacity: 0.5; }
 }
+
+/* Plan Card */
+.voyaru-plan-card {
+    border: 1px solid var(--background-modifier-border);
+    border-left: 3px solid var(--color-accent);
+    border-radius: 6px;
+    margin: 8px 0;
+    background: var(--background-secondary);
+    overflow: hidden;
+}
+
+.voyaru-plan-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--background-modifier-hover);
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.voyaru-plan-card-title {
+    font-weight: 600;
+    color: var(--text-normal);
+}
+
+.voyaru-plan-card-path {
+    font-size: 0.8em;
+    color: var(--text-muted);
+    margin-left: auto;
+}
+
+.voyaru-plan-card-content {
+    padding: 12px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.voyaru-plan-card-body {
+    margin: 0;
+    white-space: pre-wrap;
+    font-size: 0.9em;
+    color: var(--text-normal);
+    font-family: var(--font-text);
+    line-height: 1.6;
+}
+
+.voyaru-plan-card-actions {
+    display: flex;
+    gap: 8px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--background-modifier-border);
+    flex-wrap: wrap;
+}
+
+.voyaru-plan-card-btn {
+    padding: 6px 14px;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+    font-size: 0.875em;
+    transition: opacity 0.15s;
+}
+
+.voyaru-plan-card-btn:hover { opacity: 0.85; }
+.voyaru-plan-card-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.voyaru-plan-card-btn-confirm {
+    background: var(--color-accent);
+    color: var(--text-on-accent);
+}
+
+.voyaru-plan-card-btn-revise {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+}
+
+.voyaru-plan-card-btn-cancel {
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--background-modifier-border);
+}
+
+.voyaru-plan-card-revise {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.voyaru-plan-card-revise-input {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-family: var(--font-text);
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+.voyaru-plan-card-revise-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.voyaru-plan-card-footer {
+    padding: 4px 12px;
+    background: var(--background-modifier-hover);
+}
+
+.voyaru-plan-card-filepath {
+    font-size: 0.75em;
+    color: var(--text-faint);
+}
+
+/* Plan Mode Toggle */
+.voyaru-plan-mode-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--background-modifier-border);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.8em;
+    transition: all 0.15s;
+}
+
+.voyaru-plan-mode-toggle.active {
+    background: var(--color-accent);
+    color: var(--text-on-accent);
+    border-color: var(--color-accent);
+}
+
+.voyaru-plan-mode-toggle:hover {
+    opacity: 0.85;
+}

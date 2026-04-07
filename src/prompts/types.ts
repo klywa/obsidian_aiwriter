@@ -54,6 +54,7 @@ export interface PromptsConfig {
         jailbreak: OptionalPrompt;
         styleGuideInstruction: TemplateConfig;
         referenceModeInstruction: I18nText;
+        planModeInstruction: I18nText;
     };
     tools: {
         default: ToolDefinition[];

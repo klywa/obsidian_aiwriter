@@ -127,6 +127,11 @@ export class AIService {
             finalPrompt += this.promptService.getReferenceModeInstruction();
         }
 
+        // Plan Mode: append plan mode instruction
+        if (this.settings.enablePlanMode) {
+            finalPrompt += this.promptService.getPlanModeInstruction();
+        }
+
         return finalPrompt;
     }
 
@@ -311,6 +316,33 @@ export class AIService {
         // 判断文件是否在章节目录中
         const chaptersFolder = this.settings.folders?.chapters || "Chapters";
         return filePath.startsWith(chaptersFolder + "/") || filePath.startsWith(chaptersFolder + "\\");
+    }
+
+    /**
+     * Returns the path of the .plan.md file for a given chapter path.
+     * e.g., "Chapters/第一回.md" → "Chapters/第一回.plan.md"
+     */
+    private getPlanFilePath(chapterPath: string): string {
+        const lastDot = chapterPath.lastIndexOf('.');
+        const base = lastDot > -1 ? chapterPath.substring(0, lastDot) : chapterPath;
+        return base + '.plan.md';
+    }
+
+    /**
+     * Reads the content of a confirmed .plan.md file for a chapter.
+     * Returns null if no confirmed plan exists.
+     */
+    private async readConfirmedPlan(chapterPath: string): Promise<string | null> {
+        const planPath = this.getPlanFilePath(chapterPath);
+        try {
+            const content = await this.fs.readFile(planPath);
+            if (content.includes('status: confirmed') || content.includes('status: executed')) {
+                return content;
+            }
+        } catch (e) {
+            // No plan file exists
+        }
+        return null;
     }
 
     private async performPostCheckAndRefine(
@@ -525,6 +557,20 @@ export class AIService {
         const baseSystemPrompt = systemInstructionOverride || await this.getFullSystemPrompt();
         const fileTree = await this.getProjectFileTree();
         const fullSystemPrompt = baseSystemPrompt + (fileTree ? `\n\n### Project File Tree (Always Available)\n\`\`\`\n${fileTree}\n\`\`\`\n` : "");
+
+        // Plan Mode: if message contains [Plan Confirmed], update the plan file status
+        if (this.settings.enablePlanMode && newMessage.includes('[Plan Confirmed]')) {
+            const planPathMatch = newMessage.match(/\[Plan Confirmed\] planPath: ([^\n]+)/);
+            if (planPathMatch && planPathMatch[1]) {
+                const planPath = planPathMatch[1].trim();
+                try {
+                    await this.fs.updatePlanStatus(planPath, 'confirmed');
+                    console.log(`[PlanMode] Plan confirmed: ${planPath}`);
+                } catch (e) {
+                    console.warn('[PlanMode] Failed to update plan status:', e);
+                }
+            }
+        }
 
         console.log(`[AIService] File tree generated (length: ${fileTree.length}). Full System Prompt length: ${fullSystemPrompt.length}`);
 
@@ -985,6 +1031,35 @@ export class AIService {
                      let undoData: { previousContent: string | null, path: string } | undefined;
 
                      try {
+                        if (name === "proposePlan") {
+                             const planPath = this.getPlanFilePath(toolArgs.path);
+                             const now = new Date().toISOString();
+
+                             // Build the plan file content with YAML frontmatter
+                             const planFileContent = `---\nstatus: draft\nchapter: ${toolArgs.path}\ncreated: ${now}\nconfirmed: null\n---\n\n${toolArgs.content}`;
+
+                             // Save draft plan to vault
+                             await this.fs.writeFile(planPath, planFileContent);
+
+                             // Yield plan_proposal chunk to UI for user confirmation
+                             yield {
+                                 type: "plan_proposal",
+                                 planPath: planPath,
+                                 chapterPath: toolArgs.path,
+                                 content: toolArgs.content
+                             };
+
+                             output = "规划已提交给用户审阅。请等待用户在界面中确认规划后再继续写作。用户确认后会发送包含 [Plan Confirmed] 的消息，收到后再调用 writeFile 写入章节正文。";
+
+                             functionResponses.push({
+                                 functionResponse: {
+                                     name: name,
+                                     response: { result: output }
+                                 },
+                                 thoughtSignature: thoughtSignature
+                             });
+                             continue;
+                         }
                         if (name === "writeFile") {
                             // 智能修正文件名：如果模型尝试写入 "Untitled"，尝试从内容中提取标题
                             let targetPath = toolArgs.path;
@@ -1000,6 +1075,20 @@ export class AIService {
                                     const newName = match[1].trim() + ".md"; // 确保有.md后缀
                                     targetPath = dir ? `${dir}/${newName}` : newName;
                                     console.log(`[SmartRename] Renamed ${toolArgs.path} to ${targetPath} based on content title.`);
+                                }
+                            }
+
+                            // Plan Mode: if writing a chapter file, mark plan as executed
+                            if (this.settings.enablePlanMode && this.isChapterFile(targetPath)) {
+                                const confirmedPlan = await this.readConfirmedPlan(targetPath);
+                                if (confirmedPlan) {
+                                    const planPath = this.getPlanFilePath(targetPath);
+                                    try {
+                                        await this.fs.updatePlanStatus(planPath, 'executed');
+                                        console.log(`[PlanMode] Chapter ${targetPath} written from confirmed plan at ${planPath}`);
+                                    } catch (e) {
+                                        console.warn('[PlanMode] Failed to update plan status to executed:', e);
+                                    }
                                 }
                             }
 

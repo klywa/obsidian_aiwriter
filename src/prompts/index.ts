@@ -12,8 +12,10 @@ import { BASE_SYSTEM_PROMPT } from './system/base';
 import { JAILBREAK } from './system/jailbreak';
 import { STYLE_GUIDE_INSTRUCTION } from './system/style_guide_instruction';
 import { REFERENCE_MODE_INSTRUCTION } from './system/reference_mode';
+import { PLAN_MODE_INSTRUCTION } from './system/plan_mode';
 import { DEFAULT_AGENT_TOOLS } from './tools/agent_tools';
 import { FUNCTION_DEFINITIONS } from './tools/function_definitions';
+import { PLAN_TOOL_DEFINITIONS } from './tools/plan_tools';
 import { POST_CHECK_SYSTEM_PROMPT } from './post_check/system_prompt';
 import { POST_CHECK_USER_MESSAGE } from './post_check/user_message';
 import { DEFAULT_POST_CHECK_ITEMS } from './post_check/default_items';
@@ -27,11 +29,12 @@ export const DEFAULT_PROMPTS: PromptsConfig = {
         base: BASE_SYSTEM_PROMPT,
         jailbreak: JAILBREAK,
         styleGuideInstruction: STYLE_GUIDE_INSTRUCTION,
-        referenceModeInstruction: REFERENCE_MODE_INSTRUCTION
+        referenceModeInstruction: REFERENCE_MODE_INSTRUCTION,
+        planModeInstruction: PLAN_MODE_INSTRUCTION
     },
     tools: {
         default: DEFAULT_AGENT_TOOLS,
-        functionDefinitions: FUNCTION_DEFINITIONS
+        functionDefinitions: { ...FUNCTION_DEFINITIONS, ...PLAN_TOOL_DEFINITIONS }
     },
     postCheck: {
         systemPrompt: POST_CHECK_SYSTEM_PROMPT,

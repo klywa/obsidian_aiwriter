@@ -145,6 +145,17 @@ export class PromptService {
     }
 
     /**
+     * Get plan mode system instruction (appended when plan mode is active)
+     */
+    getPlanModeInstruction(): string {
+        if (!this.prompts) {
+            throw new Error('Prompts not loaded');
+        }
+
+        return this.getText(this.prompts.system.planModeInstruction);
+    }
+
+    /**
      * Get default agent tools
      */
     getDefaultTools(): AgentTool[] {
