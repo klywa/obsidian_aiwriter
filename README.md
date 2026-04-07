@@ -88,3 +88,27 @@ If you have multiple URLs, you can also do:
 ## API Documentation
 
 See https://docs.obsidian.md
+
+---
+
+## Prompt 配置文件索引
+
+所有 AI 提示词均硬编码在 `src/prompts/` 目录下，按功能分模块维护，构建时由 esbuild 打包进 `main.js`。修改后需重新运行 `npm run build`。
+
+| Prompt 功能 | 文件路径 |
+|-------------|---------|
+| **系统指令（核心）** | `src/prompts/system/base.ts` |
+| **Jailbreak 扩展内容**（可选） | `src/prompts/system/jailbreak.ts` |
+| **风格指南注入指令**（模板，含 `${styleGuidePath}`） | `src/prompts/system/style_guide_instruction.ts` |
+| **文件引用模式说明**（path 模式） | `src/prompts/system/reference_mode.ts` |
+| **默认 Agent 工具列表**（`#工具名` 预设） | `src/prompts/tools/agent_tools.ts` |
+| **AI 函数工具定义**（writeFile / readFile / deleteFile / editFile） | `src/prompts/tools/function_definitions.ts` |
+| **后置检查系统指令**（模板） | `src/prompts/post_check/system_prompt.ts` |
+| **后置检查用户消息**（模板） | `src/prompts/post_check/user_message.ts` |
+| **后置检查默认规则列表** | `src/prompts/post_check/default_items.ts` |
+| **局部修改系统指令**（模板） | `src/prompts/local_edit/system_instruction.ts` |
+| **局部修改用户消息**（模板） | `src/prompts/local_edit/user_message.ts` |
+| **类型定义**（接口，无提示词内容） | `src/prompts/types.ts` |
+| **汇总入口**（组装为 `DEFAULT_PROMPTS`） | `src/prompts/index.ts` |
+
+> **模板变量**：含 `template: true` 的文件使用 `${variableName}` 占位符，由 `PromptService` 在运行时替换（`src/services/prompt_service.ts`）。

@@ -16,7 +16,9 @@
       "Bash(git add:*)",
       "Bash(git commit -m ':*)",
       "Bash(git commit -m 'refactor: migrate LocalEditModal, LocalEditStatusModal, and LogModal to extend BaseModal:*)",
-      "Bash(cd /d \"D:\\\\Vaults\\\\Writer\\\\.obsidian\\\\plugins\\\\obsidian_aiwriter\")"
+      "Bash(cd /d \"D:\\\\Vaults\\\\Writer\\\\.obsidian\\\\plugins\\\\obsidian_aiwriter\")",
+      "Bash(echo \"EXIT_CODE: $?\")",
+      "Bash(rm:*)"
     ]
   }
 }

@@ -207,40 +207,50 @@ Every AI chat request includes a visual file tree:
 
 ### Overview
 
-所有核心 AI 提示词都**硬编码在代码中**（`src/services/default_prompts.ts`），确保用户更新插件后立即使用最新指令。
+所有核心 AI 提示词都**硬编码在代码中**（`src/prompts/` 目录），按功能分模块维护，构建时由 esbuild 打包进 `main.js`。
 
 - **硬编码策略**: 核心系统指令直接嵌入代码，不从外部文件读取
 - **版本同步**: 用户只需更新 `main.js` 即可获得最新提示词
-- **Internationalization ready**: Supports zh/en structure (currently zh only)
-- **Template support**: Variable substitution for dynamic prompts
-- **Type safety**: Validated structure via PromptService
+- **模块化组织**: 每个 prompt 独立文件，`src/prompts/index.ts` 汇总导出
+- **Template support**: Variable substitution using `${variableName}` syntax
+- **Type safety**: All prompts typed via `PromptsConfig` interface in `src/prompts/types.ts`
 
-### 核心提示词结构 (default_prompts.ts)
+### 强制规范：所有 Prompt 必须遵循此组织方式
 
-```typescript
-// src/services/default_prompts.ts
-export const DEFAULT_PROMPTS = {
-  version: "1.0.0",
-  system: {
-    base: { zh: "...", en: null },           // 核心系统指令
-    jailbreak: { zh: "...", optional: true }, // 可选的扩展内容
-    styleGuideInstruction: { zh: "...", template: true },
-    referenceModeInstruction: { zh: "..." }
-  },
-  tools: {
-    default: [...],                           // 默认 Agent 工具
-    functionDefinitions: { ... }              // AI 工具定义
-  },
-  postCheck: { ... },                         // 后置检查提示词
-  localEdit: { ... }                          // 局部编辑提示词
-}
-```
+**任何新增或修改 prompt 的工作，必须严格遵循以下规则，不得绕过：**
 
-> **注意**: `prompts.json` 文件仅用于开发参考，运行时不会被读取。
+1. **禁止在 `src/prompts/` 以外的地方硬编码 prompt 字符串**。不得在 `ai_service.ts`、`main.ts`、组件文件等处内联定义提示词。
+2. **每个新 prompt 必须创建独立模块文件**，放在 `src/prompts/` 下对应的子目录中：
+   - 系统指令 → `src/prompts/system/`
+   - AI 工具定义 → `src/prompts/tools/`
+   - 后置检查相关 → `src/prompts/post_check/`
+   - 局部编辑相关 → `src/prompts/local_edit/`
+   - 新功能专用 prompt → 在 `src/prompts/` 下创建对应子目录
+3. **新模块必须在 `src/prompts/index.ts` 中注册**，纳入 `DEFAULT_PROMPTS` 对象。
+4. **新 prompt 类型必须先在 `src/prompts/types.ts` 中定义接口**，再在模块文件中使用。
+5. **`PromptService`（`src/services/prompt_service.ts`）必须提供对应的 getter 方法**，调用方通过 `PromptService` 访问，不得直接 import prompt 模块文件。
+
+### Prompt 文件索引
+
+| Prompt 功能 | 文件路径 |
+|-------------|---------|
+| **系统指令（核心）** | `src/prompts/system/base.ts` |
+| **Jailbreak 扩展内容**（可选） | `src/prompts/system/jailbreak.ts` |
+| **风格指南注入指令**（模板，含 `${styleGuidePath}`） | `src/prompts/system/style_guide_instruction.ts` |
+| **文件引用模式说明**（path 模式） | `src/prompts/system/reference_mode.ts` |
+| **默认 Agent 工具列表**（`#工具名` 预设） | `src/prompts/tools/agent_tools.ts` |
+| **AI 函数工具定义**（writeFile / readFile / deleteFile / editFile） | `src/prompts/tools/function_definitions.ts` |
+| **后置检查系统指令**（模板） | `src/prompts/post_check/system_prompt.ts` |
+| **后置检查用户消息**（模板） | `src/prompts/post_check/user_message.ts` |
+| **后置检查默认规则列表** | `src/prompts/post_check/default_items.ts` |
+| **局部修改系统指令**（模板） | `src/prompts/local_edit/system_instruction.ts` |
+| **局部修改用户消息**（模板） | `src/prompts/local_edit/user_message.ts` |
+| **类型定义**（接口，无提示词内容） | `src/prompts/types.ts` |
+| **汇总入口**（组装为 `DEFAULT_PROMPTS`） | `src/prompts/index.ts` |
 
 ### PromptService API
 
-The `PromptService` class provides type-safe access to all prompts:
+The `PromptService` class (`src/services/prompt_service.ts`) provides type-safe access to all prompts:
 
 ```typescript
 // System prompts
@@ -263,18 +273,20 @@ promptService.getLocalEditSystemInstruction(basePrompt): string
 promptService.getLocalEditUserMessage(params: LocalEditParams): string
 ```
 
-### Customizing Prompts (开发者)
+### 新增 Prompt 的完整流程
 
-1. **修改核心提示词**: 编辑 `src/services/default_prompts.ts`，然后重新构建
-2. **Templates**: Use `${variableName}` syntax for dynamic content
-3. **Optional content**: Set `"optional": true` to make prompts togglable
+1. 在 `src/prompts/types.ts` 中添加新接口或扩展 `PromptsConfig`
+2. 在 `src/prompts/<子目录>/<新文件>.ts` 中定义并导出 prompt 常量
+3. 在 `src/prompts/index.ts` 中 import 并纳入 `DEFAULT_PROMPTS`
+4. 在 `src/services/prompt_service.ts` 中添加对应 getter 方法
+5. 调用方使用 `promptService.getXxx()` 访问，运行 `npm run build` 验证构建
 
 ### Important Notes
 
-- **硬编码策略**: 核心系统指令存储在 `default_prompts.ts` 中，随代码一起打包。用户更新 `main.js` 后立即生效。
 - **用户自定义**: 用户可以通过设置界面的"自定义提示词"添加个性化指令，这部分保存在 `data.json` 中。
 - **Jailbreak content**: The `system.jailbreak` section contains content designed to bypass safety guidelines. It's marked as optional and should be reviewed carefully.
 - **Language fallback**: Currently uses Chinese (zh) with null English placeholders. Falls back to zh if en is not available.
+- **模板变量**: 含 `template: true` 的 prompt 使用 `${variableName}` 占位符，由 `PromptService` 在运行时替换。
 
 ## Important Settings and Configuration
 
@@ -358,13 +370,16 @@ Models are defined in `MODELS` constant in `settings.ts`.
 
 ### When Modifying Prompts
 
-1. **修改核心提示词**: 编辑 `src/services/default_prompts.ts`
-2. **For new prompt types**:
-   - Add to `DEFAULT_PROMPTS` structure in `default_prompts.ts`
-   - Update `PromptsConfig` interface in `prompt_service.ts`
-   - Add getter method in `PromptService` class
-   - Update calling code to use new prompt
-3. **For template variables**: Use `${variableName}` syntax in prompt text
+**所有 prompt 修改必须遵循 `src/prompts/` 模块化规范（见 "Prompt Management System" 章节）。**
+
+1. **修改现有 prompt**: 直接编辑 `src/prompts/<子目录>/<文件>.ts`，参照 Prompt 文件索引表定位目标文件
+2. **新增 prompt**:
+   - 在 `src/prompts/types.ts` 中扩展接口定义
+   - 在 `src/prompts/<对应子目录>/` 创建新模块文件
+   - 在 `src/prompts/index.ts` 中注册到 `DEFAULT_PROMPTS`
+   - 在 `src/services/prompt_service.ts` 中添加 getter 方法
+   - 调用方通过 `promptService.getXxx()` 访问，禁止直接 import prompt 模块
+3. **For template variables**: Use `${variableName}` syntax; list variable names in the `variables` array of `TemplateConfig`
 4. **Testing**: 运行 `npm run build` 重新构建，然后在 Obsidian 中重新加载插件
 
 ## Key File Paths Reference
@@ -372,7 +387,7 @@ Models are defined in `MODELS` constant in `settings.ts`.
 - **Plugin Entry**: [src/main.ts](src/main.ts) - Plugin lifecycle and command registration
 - **AI Service**: [src/services/ai_service.ts](src/services/ai_service.ts) - Gemini API integration (~1100 lines)
 - **Prompt Service**: [src/services/prompt_service.ts](src/services/prompt_service.ts) - Centralized prompt management (~300 lines)
-- **Default Prompts**: [src/services/default_prompts.ts](src/services/default_prompts.ts) - 核心系统指令（硬编码）
+- **Prompts Directory**: [src/prompts/](src/prompts/) - 模块化 prompt 目录（index.ts 汇总，types.ts 定义接口）
 - **Chat UI**: [src/views/ChatComponent.tsx](src/views/ChatComponent.tsx) - Main React interface (2832 lines)
 - **Settings**: [src/settings.ts](src/settings.ts) - Settings interface and UI
 - **File System**: [src/services/fs_service.ts](src/services/fs_service.ts) - Vault file operations
