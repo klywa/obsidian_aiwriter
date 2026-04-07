@@ -318,6 +318,11 @@ Key settings to understand when modifying the plugin:
 
 Models are defined in `MODELS` constant in `settings.ts`.
 
+## Requirement Management Rules
+
+1. **需求汇总到 TASK 文件**: 用户提出的所有需求，必须将详细的需求描述汇总到项目根目录下的 `TASK.md` 文件中。每个需求作为独立的条目，使用 `- [ ]` 格式记录，包含需求描述、涉及的功能模块等关键信息。
+2. **完成标记**: 在逐步开发过程中，每完成一个 feature 的开发**且测试通过**后，必须将 `TASK.md` 中对应的需求条目从 `- [ ]` 改为 `- [x]`，以标记完成。这样可以清楚区分：尚未实现的需求、已实现但未测试的需求、已完成（开发+测试）的需求。
+
 ## Code Modification Guidelines
 
 ### When Modifying AI Service (`ai_service.ts`)
