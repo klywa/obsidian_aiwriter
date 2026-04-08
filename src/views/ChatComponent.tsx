@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { AIService } from '../services/ai_service';
 import { FSService } from '../services/fs_service';
 import { SendIcon, StopIcon, PlusIcon, CloseIcon, CopyIcon, FileIcon, EditIcon, RefreshIcon, SaveIcon, UserIcon, BotIcon, ThinkingIcon, ToolIcon, TrashIcon, CheckIcon, TextSizeIcon, LogIcon, ExportIcon, ArrowUpIcon, MentionIcon, ChevronDownIcon, MoreHorizontalIcon, ClockIcon } from '../components/Icons';
-import { Message, Session, MODELS, QueryHistoryItem, ProviderConfig } from '../settings';
+import { Message, Session, MODELS, QueryHistoryItem, ProviderConfig, ModelInfo } from '../settings';
 import { Notice, Menu, TFile, MarkdownView, Platform } from 'obsidian';
 import { ExportModal } from '../modals/ExportModal';
 import { LogModal } from '../modals/LogModal';
@@ -35,7 +35,12 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const [editingSessionName, setEditingSessionName] = useState<string>('');
     const [fontSize, setFontSize] = useState<number>(plugin.settings.fontSize || 14);
     const [showSettingsMenu, setShowSettingsMenu] = useState(false);
-    const [selectedModel, setSelectedModel] = useState<string>(plugin.settings.model);
+    const getActiveProvider = () => plugin.settings.providers?.find(
+        (p: ProviderConfig) => p.id === plugin.settings.activeProviderId
+    );
+    const [selectedModel, setSelectedModel] = useState<string>(
+        () => getActiveProvider()?.selectedModel || plugin.settings.model || ''
+    );
     const [showModelSelector, setShowModelSelector] = useState(false);
     const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
     const [editingContent, setEditingContent] = useState<string>('');
@@ -2518,7 +2523,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                             await plugin.saveSettings();
                         }}
                     >
-                        📋
+                        Plan
                     </button>
                     {/* History Prompt Button */}
                     <button 
@@ -2990,7 +2995,13 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                 onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
                                 title="选择模型"
                             >
-                                <span>{MODELS.find(m => m.id === selectedModel)?.name}</span>
+                                <span>{(() => {
+                                    const activeProvider = getActiveProvider();
+                                    const providerModels = activeProvider?.models;
+                                    const found = providerModels?.find((m: ModelInfo) => m.id === selectedModel)
+                                        || MODELS.find(m => m.id === selectedModel);
+                                    return found?.name || selectedModel || '选择模型';
+                                })()}</span>
                                 <ChevronDownIcon size={12} />
                             </div>
 
@@ -3011,7 +3022,14 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                     flexDirection: 'column',
                                     gap: '2px'
                                 }}>
-                                    {MODELS.map(model => (
+                                    {((() => {
+                                        const activeProvider = getActiveProvider();
+                                        const providerModels = activeProvider?.models;
+                                        const list: ModelInfo[] = (providerModels && providerModels.length > 0)
+                                            ? providerModels
+                                            : MODELS;
+                                        return list;
+                                    })()).map((model: ModelInfo) => (
                                         <div 
                                             key={model.id}
                                             onClick={async () => {

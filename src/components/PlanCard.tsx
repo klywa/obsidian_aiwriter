@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { CheckIcon, StopIcon, EditIcon, TrashIcon, FileIcon } from './Icons';
 
 interface PlanCardProps {
     planPath: string;
@@ -45,7 +46,7 @@ export const PlanCard: React.FC<PlanCardProps> = ({
     return (
         <div className="voyaru-plan-card">
             <div className="voyaru-plan-card-header">
-                <span className="voyaru-plan-card-icon">📋</span>
+                <span className="voyaru-plan-card-icon"><FileIcon size={14} /></span>
                 <span className="voyaru-plan-card-title">章节规划</span>
                 <span className="voyaru-plan-card-path">{chapterPath}</span>
             </div>
@@ -66,8 +67,8 @@ export const PlanCard: React.FC<PlanCardProps> = ({
             </div>
             <div className="voyaru-plan-card-actions">
                 {confirmed ? (
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.875em' }}>
-                        {aborted ? '⏹ 已中止' : '✓ 规划已确认'}
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.875em', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        {aborted ? <><StopIcon size={12} /> 已中止</> : <><CheckIcon size={12} /> 规划已确认</>}
                     </span>
                 ) : !showReviseInput ? (
                     <>
@@ -81,25 +82,25 @@ export const PlanCard: React.FC<PlanCardProps> = ({
                             className="voyaru-plan-card-btn voyaru-plan-card-btn-confirm"
                             onClick={handleConfirm}
                         >
-                            ✓ 确认规划，开始写作
+                            <CheckIcon size={12} /> 确认规划，开始写作
                         </button>
                         <button
                             className="voyaru-plan-card-btn voyaru-plan-card-btn-revise"
                             onClick={() => setShowReviseInput(true)}
                         >
-                            ✏️ 提出修改意见
+                            <EditIcon size={12} /> 提出修改意见
                         </button>
                         <button
                             className="voyaru-plan-card-btn voyaru-plan-card-btn-abort"
                             onClick={() => onAbortKeep(planPath)}
                         >
-                            ⏹ 保留规划并中止
+                            <StopIcon size={12} /> 保留规划并中止
                         </button>
                         <button
                             className="voyaru-plan-card-btn voyaru-plan-card-btn-abort"
                             onClick={() => onAbortDelete(planPath)}
                         >
-                            🗑 删除规划并中止
+                            <TrashIcon size={12} /> 删除规划并中止
                         </button>
                     </>
                 ) : (
