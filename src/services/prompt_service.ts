@@ -346,6 +346,52 @@ export class PromptService {
     }
 
     /**
+     * Get memory extraction system prompt with base prompt substitution
+     */
+    getMemoryExtractionSystemPrompt(basePrompt: string): string {
+        if (!this.prompts) {
+            throw new Error('Prompts not loaded');
+        }
+
+        const template = this.getText(this.prompts.memory.extractionSystemPrompt);
+        return this.substituteTemplate(template, { baseSystemPrompt: basePrompt });
+    }
+
+    /**
+     * Get memory extraction user message with all parameters
+     */
+    getMemoryExtractionUserMessage(params: {
+        chapterPath: string;
+        chapterContent: string;
+        memoryIndex: string;
+        relatedEntityContents: string;
+    }): string {
+        if (!this.prompts) {
+            throw new Error('Prompts not loaded');
+        }
+
+        const template = this.getText(this.prompts.memory.extractionUserMessage);
+        return this.substituteTemplate(template, {
+            chapterPath: params.chapterPath,
+            chapterContent: params.chapterContent,
+            memoryIndex: params.memoryIndex,
+            relatedEntityContents: params.relatedEntityContents
+        });
+    }
+
+    /**
+     * Get memory mode instruction for injection into main system prompt
+     */
+    getMemoryModeInstruction(memoryIndex: string): string {
+        if (!this.prompts) {
+            throw new Error('Prompts not loaded');
+        }
+
+        const template = this.getText(this.prompts.memory.systemInstruction);
+        return this.substituteTemplate(template, { memoryIndex });
+    }
+
+    /**
      * Set current language for text retrieval
      * @param lang - Language code ('zh' or 'en')
      */

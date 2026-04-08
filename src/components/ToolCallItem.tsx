@@ -107,6 +107,22 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
                 }
                 return `Post-check completed for ${filePath}`;
             }
+            case 'memoryExtract': {
+                const filePath = args.filePath || 'file';
+                if (isRunning || isPending) return `正在提取记忆: ${filePath}...`;
+                if (isFailed) return `记忆提取失败: ${filePath}`;
+                if (typeof result === 'string') {
+                    if (result.includes('记忆已更新')) {
+                        const lines = result.split('\n');
+                        const count = lines.filter(l => l.trim().startsWith('-')).length;
+                        return `记忆更新完成（${count} 个实体）`;
+                    }
+                    if (result.includes('未检测到')) {
+                        return `记忆无需更新: ${filePath}`;
+                    }
+                }
+                return `记忆提取完成: ${filePath}`;
+            }
             default:
                 return message.tool || 'Unknown operation';
         }

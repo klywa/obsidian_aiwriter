@@ -28,5 +28,10 @@ export const DEFAULT_AGENT_TOOLS = [
         id: "review-and-annotate",
         name: { zh: "审阅并标注", en: null },
         prompt: { zh: "仔细阅读当前指定的章节，生成修改建议批注。对于措辞、表达等局部问题，使用 local 类型批注并给出具体的修改建议文字；对于节奏、结构、主题等全局问题，使用 global 类型批注并描述整体要求。批注要具体、可执行。", en: null }
+    },
+    {
+        id: "refresh-memory",
+        name: { zh: "刷新记忆", en: null },
+        prompt: { zh: "请执行全量记忆刷新：清空现有记忆文件，按顺序重新读取所有章节，逐章提取角色状态、情节进展和世界观设定，写入记忆文件夹中。完成后报告生成了哪些记忆文件。", en: null }
     }
 ];

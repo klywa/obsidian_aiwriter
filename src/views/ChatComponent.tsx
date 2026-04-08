@@ -828,7 +828,9 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     const f3 = await plugin.fsService.listFilesRecursiveWithMtime(plugin.settings.folders.outlines);
                     const f4 = await plugin.fsService.listFilesRecursiveWithMtime(plugin.settings.folders.notes);
                     const f5 = await plugin.fsService.listFilesRecursiveWithMtime(plugin.settings.folders.knowledge);
-                    const all = [...f1, ...f2, ...f3, ...f4, ...f5];
+                    const f6 = await plugin.fsService.listFilesRecursiveWithMtime(plugin.settings.folders.memory);
+                    const f7 = await plugin.fsService.listFilesRecursiveWithMtime(plugin.settings.folders.plan);
+                    const all = [...f1, ...f2, ...f3, ...f4, ...f5, ...f6, ...f7];
                     
                     // 按修改时间排序（最新的在前）
                     all.sort((a, b) => b.mtime - a.mtime);
@@ -840,7 +842,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     const uniqueFiles = Array.from(new Set(sortedPaths));
                     setAllFiles(uniqueFiles);
                     setIsFilesLoaded(true);
-                    console.log(`📁 Loaded ${uniqueFiles.length} files from 5 folders (sorted by modification time)`);
+                    console.log(`📁 Loaded ${uniqueFiles.length} files from 7 folders (sorted by modification time)`);
                 } catch (e) {
                     console.error('Failed to load files:', e);
                 }

@@ -100,7 +100,11 @@ export interface VoyaruSettings {
         outlines: string;
         notes: string;
         knowledge: string;
+        memory: string;
+        plan: string;
     };
+    enableMemory: boolean;
+    autoMemoryUpdate: boolean;
     tools: AgentTool[];
     postCheckItems: PostCheckItem[];
     enablePostCheck: boolean;
@@ -170,8 +174,12 @@ export const DEFAULT_SETTINGS: VoyaruSettings = {
         characters: "Characters",
         outlines: "Outlines",
         notes: "Notes",
-        knowledge: "Knowledge"
+        knowledge: "Knowledge",
+        memory: "Memory",
+        plan: "Plan"
     },
+    enableMemory: false,
+    autoMemoryUpdate: true,
     // Tools and postCheckItems are now loaded from prompts.json
     // Will be populated during plugin initialization if empty
     tools: [],
@@ -452,7 +460,30 @@ export class VoyaruSettingTab extends PluginSettingTab {
                         }
                     ).open();
                 }));
-        
+
+        new Setting(containerEl)
+            .setName('启用记忆系统')
+            .setDesc('开启后，AI 写完章节时自动提取角色状态、情节进展等记忆，并在后续写作中注入索引。')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableMemory ?? false)
+                .onChange(async (value) => {
+                    this.plugin.settings.enableMemory = value;
+                    await this.plugin.saveSettings();
+                    this.display();
+                }));
+
+        if (this.plugin.settings.enableMemory) {
+            new Setting(containerEl)
+                .setName('自动更新记忆')
+                .setDesc('AI 写完章节（writeFile/editFile）后自动触发记忆提取。关闭后可用 #刷新记忆 手动触发。')
+                .addToggle(toggle => toggle
+                    .setValue(this.plugin.settings.autoMemoryUpdate ?? true)
+                    .onChange(async (value) => {
+                        this.plugin.settings.autoMemoryUpdate = value;
+                        await this.plugin.saveSettings();
+                    }));
+        }
+
         containerEl.createEl('h3', { text: 'UI Configuration' });
         
         new Setting(containerEl)

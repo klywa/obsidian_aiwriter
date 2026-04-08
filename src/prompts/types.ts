@@ -70,4 +70,9 @@ export interface PromptsConfig {
         systemInstruction: TemplateConfig;
         userMessage: TemplateConfig;
     };
+    memory: {
+        extractionSystemPrompt: TemplateConfig;
+        extractionUserMessage: TemplateConfig;
+        systemInstruction: TemplateConfig;
+    };
 }

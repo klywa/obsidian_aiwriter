@@ -50,6 +50,17 @@ export default class VoyaruPlugin extends Plugin {
 
         this.aiService = new AIService(this.settings, this.fsService, this.promptService);
 
+        // Invalidate memory index cache when Memory folder files change
+        const invalidateMemoryOnChange = (file: any) => {
+            const memoryFolder = this.settings.folders.memory || 'Memory';
+            if (file.path && file.path.startsWith(memoryFolder + '/')) {
+                this.aiService.invalidateMemoryIndex();
+            }
+        };
+        this.registerEvent(this.app.vault.on('modify', invalidateMemoryOnChange));
+        this.registerEvent(this.app.vault.on('create', invalidateMemoryOnChange));
+        this.registerEvent(this.app.vault.on('delete', invalidateMemoryOnChange));
+
         // Initialize chapter sentences if setting is enabled
         if (this.settings.useProjectContentAsWaitingMessages) {
             await this.refreshWaitingMessagesFromChapters();

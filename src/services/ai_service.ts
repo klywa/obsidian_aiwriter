@@ -10,6 +10,7 @@ export class AIService {
     private settings: VoyaruSettings;
     private activeChats: Map<string, any> = new Map();
     private promptService: PromptService;
+    private memoryIndexCache: string | null = null;
 
     constructor(settings: VoyaruSettings, fs: FSService, promptService: PromptService) {
         this.settings = settings;
@@ -165,6 +166,18 @@ export class AIService {
             prompt += '\n\n---\n\n## WRITER.md（用户写作指南）\n\n' + writerMd;
         }
 
+        // 注入记忆系统索引（在 WRITER.md 之后、文件树之前）
+        if (this.settings.enableMemory) {
+            try {
+                const memoryIndex = await this.buildMemoryIndex();
+                if (memoryIndex) {
+                    prompt += '\n\n---\n\n' + this.promptService.getMemoryModeInstruction(memoryIndex);
+                }
+            } catch (e) {
+                console.warn('[Memory] Failed to build memory index for system prompt:', e);
+            }
+        }
+
         return prompt;
     }
 
@@ -203,7 +216,7 @@ export class AIService {
 
     async getProjectFileTree(): Promise<string> {
         const folders = this.settings.folders;
-        const folderKeys: (keyof typeof folders)[] = ['chapters', 'characters', 'outlines', 'notes', 'knowledge'];
+        const folderKeys: (keyof typeof folders)[] = ['chapters', 'characters', 'outlines', 'notes', 'knowledge', 'memory', 'plan'];
         const allFiles = new Set<string>();
         
         console.log(`[AIService] Building file tree from folders:`, folders);
@@ -423,6 +436,255 @@ export class AIService {
         } catch (error: any) {
             console.error("[PostCheck] Error during post-check:", error);
             throw error;
+        }
+    }
+
+    /**
+     * Invalidate the in-memory index cache (call when Memory folder files change)
+     */
+    invalidateMemoryIndex(): void {
+        this.memoryIndexCache = null;
+        console.log('[Memory] Index cache invalidated');
+    }
+
+    /**
+     * Build memory index by scanning YAML frontmatter of all memory files.
+     * Result is cached until invalidated.
+     */
+    async buildMemoryIndex(): Promise<string> {
+        if (this.memoryIndexCache !== null) {
+            return this.memoryIndexCache;
+        }
+
+        const memoryFolder = this.settings.folders.memory || 'Memory';
+        const categories = [
+            { key: 'Characters', label: '角色 (Characters/)' },
+            { key: 'Plotlines', label: '情节线 (Plotlines/)' },
+            { key: 'World', label: '世界观 (World/)' },
+        ];
+
+        const sections: string[] = [];
+
+        for (const cat of categories) {
+            const folderPath = `${memoryFolder}/${cat.key}`;
+            let filePaths: string[] = [];
+            try {
+                filePaths = await this.fs.listFilesRecursive(folderPath);
+            } catch {
+                // Folder may not exist yet
+                continue;
+            }
+
+            const mdFiles = filePaths.filter(p => p.endsWith('.md'));
+            if (mdFiles.length === 0) continue;
+
+            const lines: string[] = [`### ${cat.label}`];
+            for (const filePath of mdFiles.sort()) {
+                try {
+                    const content = await this.fs.readFile(filePath);
+                    const summaryMatch = content.match(/^summary:\s*(.+)$/m);
+                    const summary = summaryMatch ? summaryMatch[1]!.trim() : '（无摘要）';
+                    lines.push(`- ${filePath}: ${summary}`);
+                } catch {
+                    // Skip unreadable files
+                }
+            }
+            sections.push(lines.join('\n'));
+        }
+
+        const index = sections.length > 0 ? sections.join('\n\n') : '';
+        this.memoryIndexCache = index;
+        console.log(`[Memory] Index built: ${index.length} chars`);
+        return index;
+    }
+
+    /**
+     * Perform memory extraction from a chapter file.
+     * Clones the performPostCheckAndRefine() pattern.
+     */
+    private async performMemoryExtraction(
+        chapterPath: string,
+        chapterContent: string,
+        abortSignal?: AbortSignal
+    ): Promise<{ updatedEntities: string[] } | null> {
+        if (!this.settings.enableMemory) {
+            return null;
+        }
+
+        if (!this.genAI) {
+            throw new Error('AI client not initialized');
+        }
+
+        console.log(`[Memory] Starting extraction for ${chapterPath}`);
+
+        // Build index
+        const memoryIndex = await this.buildMemoryIndex();
+
+        // Smart pre-read: find entities whose names appear in chapter content
+        const memoryFolder = this.settings.folders.memory || 'Memory';
+        const allEntityFiles: string[] = [];
+        for (const cat of ['Characters', 'Plotlines', 'World']) {
+            try {
+                const files = await this.fs.listFilesRecursive(`${memoryFolder}/${cat}`);
+                allEntityFiles.push(...files.filter(f => f.endsWith('.md')));
+            } catch {
+                // Folder may not exist
+            }
+        }
+
+        const relatedParts: string[] = [];
+        for (const filePath of allEntityFiles) {
+            // Entity name = filename without .md
+            const entityName = filePath.split('/').pop()?.replace(/\.md$/, '') || '';
+            if (entityName && chapterContent.includes(entityName)) {
+                try {
+                    const fileContent = await this.fs.readFile(filePath);
+                    relatedParts.push(`### ${filePath}\n\n${fileContent}`);
+                } catch {
+                    // Skip
+                }
+            }
+        }
+        const relatedEntityContents = relatedParts.length > 0
+            ? relatedParts.join('\n\n---\n\n')
+            : '（暂无相关实体的现有记忆文件）';
+
+        // Build prompts
+        const baseSystemPrompt = await this.getFullSystemPrompt();
+        const extractionSystemPrompt = this.promptService.getMemoryExtractionSystemPrompt(baseSystemPrompt);
+        const extractionUserMessage = this.promptService.getMemoryExtractionUserMessage({
+            chapterPath,
+            chapterContent,
+            memoryIndex: memoryIndex || '（记忆索引为空，当前没有已有记忆文件）',
+            relatedEntityContents
+        });
+
+        // Create temp session
+        const chat = this.genAI.chats.create({
+            model: this.getCurrentModel(),
+            config: {
+                systemInstruction: extractionSystemPrompt,
+                tools: [],
+            },
+            history: []
+        });
+
+        const stream = await chat.sendMessageStream({ message: extractionUserMessage });
+
+        let fullResponse = '';
+        for await (const chunk of stream) {
+            if (abortSignal?.aborted) {
+                throw new Error('Memory extraction aborted');
+            }
+            if (chunk.text) {
+                fullResponse += chunk.text;
+            }
+        }
+
+        console.log(`[Memory] Extraction response length: ${fullResponse.length}`);
+
+        // Parse ===ENTITY=== blocks
+        const entityRegex = /===ENTITY===([\s\S]*?)===CONTENT===([\s\S]*?)===END===/g;
+        const updatedEntities: string[] = [];
+        let match: RegExpExecArray | null;
+
+        while ((match = entityRegex.exec(fullResponse)) !== null) {
+            const metaBlock = match[1]!.trim();
+            const contentBlock = match[2]!.trim();
+
+            const categoryMatch = metaBlock.match(/^category:\s*(.+)$/m);
+            const nameMatch = metaBlock.match(/^name:\s*(.+)$/m);
+            const summaryMatch = metaBlock.match(/^summary:\s*(.+)$/m);
+
+            if (!categoryMatch || !nameMatch) {
+                console.warn('[Memory] Skipping entity block — missing category or name');
+                continue;
+            }
+
+            const category = categoryMatch[1]!.trim().toLowerCase();
+            const name = nameMatch[1]!.trim();
+            const summary = summaryMatch ? summaryMatch[1]!.trim() : name;
+
+            // Map category to subfolder
+            const catFolderMap: Record<string, string> = {
+                characters: 'Characters',
+                plotlines: 'Plotlines',
+                world: 'World'
+            };
+            const subFolder = catFolderMap[category];
+            if (!subFolder) {
+                console.warn(`[Memory] Unknown category: ${category}`);
+                continue;
+            }
+
+            const filePath = `${memoryFolder}/${subFolder}/${name}.md`;
+            const typeMap: Record<string, string> = {
+                characters: 'character',
+                plotlines: 'plotline',
+                world: 'world'
+            };
+            const today = new Date().toISOString().split('T')[0];
+            const frontmatter = `---\ntype: ${typeMap[category]}\nsummary: ${summary}\nlastUpdated: ${today}\n---\n\n`;
+            const fileContent = frontmatter + contentBlock;
+
+            await this.fs.writeFile(filePath, fileContent);
+            updatedEntities.push(filePath);
+            console.log(`[Memory] Written: ${filePath}`);
+        }
+
+        // Invalidate cache after updates
+        this.invalidateMemoryIndex();
+
+        return { updatedEntities };
+    }
+
+    /**
+     * Full memory refresh: clear all memory files and re-extract from all chapters in order.
+     */
+    async performFullMemoryRefresh(
+        abortSignal?: AbortSignal,
+        onProgress?: (current: number, total: number) => void
+    ): Promise<void> {
+        if (!this.settings.enableMemory) return;
+
+        const memoryFolder = this.settings.folders.memory || 'Memory';
+        const chaptersFolder = this.settings.folders.chapters || 'Chapters';
+
+        // Clear existing memory files
+        for (const cat of ['Characters', 'Plotlines', 'World']) {
+            try {
+                const files = await this.fs.listFilesRecursive(`${memoryFolder}/${cat}`);
+                for (const f of files.filter(fp => fp.endsWith('.md'))) {
+                    await this.fs.deleteFile(f);
+                }
+            } catch {
+                // Folder may not exist
+            }
+        }
+        this.invalidateMemoryIndex();
+
+        // Get all chapter files sorted
+        let chapterFiles: string[] = [];
+        try {
+            chapterFiles = (await this.fs.listFilesRecursive(chaptersFolder))
+                .filter(f => f.endsWith('.md'))
+                .sort();
+        } catch {
+            console.warn('[Memory] Could not list chapter files for full refresh');
+            return;
+        }
+
+        const total = chapterFiles.length;
+        for (let i = 0; i < total; i++) {
+            if (abortSignal?.aborted) break;
+            const chapterPath = chapterFiles[i]!;
+            onProgress?.(i + 1, total);
+            try {
+                const content = await this.fs.readFile(chapterPath);
+                await this.performMemoryExtraction(chapterPath, content, abortSignal);
+            } catch (err) {
+                console.error(`[Memory] Failed to extract from ${chapterPath}:`, err);
+            }
         }
     }
 
@@ -1105,6 +1367,8 @@ export class AIService {
                             
                             // 检查是否是章节文件，如果是则触发后置检查和润色
                             const isChapterFile = this.isChapterFile(targetPath);
+                            // Track final chapter content (may be updated by PostCheck)
+                            let finalChapterContent = toolArgs.content;
                             if (isChapterFile && this.settings.enablePostCheck && this.settings.postCheckItems && this.settings.postCheckItems.length > 0) {
                                 // Yield tool_call_start for post-check
                                 yield {
@@ -1124,10 +1388,11 @@ export class AIService {
                                     if (checkResult) {
                                         yield { type: "thinking", content: `后置检查结果：\n\n${checkResult}` };
                                     }
-                                    
+
                                     if (refinedContent && refinedContent !== toolArgs.content) {
                                         // 应用润色后的内容
                                         await this.fs.writeFile(targetPath, refinedContent);
+                                        finalChapterContent = refinedContent;
                                         const refinedOutput = `File ${targetPath} refined and updated.`;
 
                                         // yield第二次writeFile的结果（润色后版本）
@@ -1140,6 +1405,25 @@ export class AIService {
                                             args: { filePath: targetPath },
                                             result: `Content refined (${refinedContent.length} chars). Check result: ${checkResult || 'Passed'}`
                                         };
+
+                                        // Memory extraction after PostCheck (refined path)
+                                        if (this.settings.enableMemory && this.settings.autoMemoryUpdate) {
+                                            yield { type: "tool_call_start", tool: "memoryExtract", args: { filePath: targetPath } };
+                                            try {
+                                                const memResult = await this.performMemoryExtraction(targetPath, finalChapterContent, abortSignal);
+                                                const entities = memResult?.updatedEntities || [];
+                                                yield {
+                                                    type: "tool_result",
+                                                    tool: "memoryExtract",
+                                                    args: { filePath: targetPath },
+                                                    result: entities.length > 0
+                                                        ? `记忆已更新：\n${entities.map(e => `  - ${e}`).join('\n')}`
+                                                        : '本章未检测到需要更新的记忆实体。'
+                                                };
+                                            } catch (memErr: any) {
+                                                yield { type: "tool_result", tool: "memoryExtract", args: { filePath: targetPath }, result: `记忆提取失败：${memErr.message}`, error: true };
+                                            }
+                                        }
 
                                         // 跳过后续的tool_result yield（因为已经yield过了）
                                         functionResponses.push({
@@ -1171,7 +1455,26 @@ export class AIService {
                                     };
                                 }
                             }
-                            
+
+                            // Memory extraction (no-refinement path: PostCheck passed or PostCheck disabled)
+                            if (isChapterFile && this.settings.enableMemory && this.settings.autoMemoryUpdate) {
+                                yield { type: "tool_call_start", tool: "memoryExtract", args: { filePath: targetPath } };
+                                try {
+                                    const memResult = await this.performMemoryExtraction(targetPath, finalChapterContent, abortSignal);
+                                    const entities = memResult?.updatedEntities || [];
+                                    yield {
+                                        type: "tool_result",
+                                        tool: "memoryExtract",
+                                        args: { filePath: targetPath },
+                                        result: entities.length > 0
+                                            ? `记忆已更新：\n${entities.map(e => `  - ${e}`).join('\n')}`
+                                            : '本章未检测到需要更新的记忆实体。'
+                                    };
+                                } catch (memErr: any) {
+                                    yield { type: "tool_result", tool: "memoryExtract", args: { filePath: targetPath }, result: `记忆提取失败：${memErr.message}`, error: true };
+                                }
+                            }
+
                             // 跳过后续的tool_result yield（因为已经yield过了）
                             functionResponses.push({
                                 functionResponse: {
@@ -1256,12 +1559,15 @@ export class AIService {
                                 // Post-check logic: Only trigger for replace/append operations on chapter files
                                 const isChapterFile = this.isChapterFile(toolArgs.path);
                                 const shouldPostCheck = (operation === 'replace' || operation === 'append');
+                                // Track final content for memory extraction
+                                let finalEditContent: string | null = null;
 
                                 if (isChapterFile && shouldPostCheck && this.settings.enablePostCheck &&
                                     this.settings.postCheckItems && this.settings.postCheckItems.length > 0) {
 
                                     // Read updated file content for post-check
                                     const updatedContent = await this.fs.readFile(toolArgs.path);
+                                    finalEditContent = updatedContent;
 
                                     // Yield tool_call_start for post-check
                                     yield {
@@ -1284,6 +1590,7 @@ export class AIService {
                                         if (refinedContent && refinedContent !== updatedContent) {
                                             // Apply refined content (full rewrite after check)
                                             await this.fs.writeFile(toolArgs.path, refinedContent);
+                                            finalEditContent = refinedContent;
 
                                             yield createToolResult("writeFile", `File ${toolArgs.path} refined after post-check`, { path: toolArgs.path, content: refinedContent }, { previousContent: updatedContent, path: toolArgs.path });
 
@@ -1313,6 +1620,26 @@ export class AIService {
                                             result: `Post-check failed: ${refineError.message}`,
                                             error: true
                                         };
+                                    }
+                                }
+
+                                // Memory extraction (after PostCheck for chapter files)
+                                if (isChapterFile && shouldPostCheck && this.settings.enableMemory && this.settings.autoMemoryUpdate) {
+                                    const contentForMemory = finalEditContent || await this.fs.readFile(toolArgs.path);
+                                    yield { type: "tool_call_start", tool: "memoryExtract", args: { filePath: toolArgs.path } };
+                                    try {
+                                        const memResult = await this.performMemoryExtraction(toolArgs.path, contentForMemory, abortSignal);
+                                        const entities = memResult?.updatedEntities || [];
+                                        yield {
+                                            type: "tool_result",
+                                            tool: "memoryExtract",
+                                            args: { filePath: toolArgs.path },
+                                            result: entities.length > 0
+                                                ? `记忆已更新：\n${entities.map(e => `  - ${e}`).join('\n')}`
+                                                : '本章未检测到需要更新的记忆实体。'
+                                        };
+                                    } catch (memErr: any) {
+                                        yield { type: "tool_result", tool: "memoryExtract", args: { filePath: toolArgs.path }, result: `记忆提取失败：${memErr.message}`, error: true };
                                     }
                                 }
 

@@ -51,9 +51,15 @@ export class FolderConfigModal extends BaseModal {
         this.addFolderSetting(mainContainer, '笔记文件夹', 'notes', 
             '存放灵感、素材等笔记');
         
-        this.addFolderSetting(mainContainer, '知识库文件夹', 'knowledge', 
+        this.addFolderSetting(mainContainer, '知识库文件夹', 'knowledge',
             '存放世界设定、风格指南等');
-        
+
+        this.addFolderSetting(mainContainer, '记忆文件夹', 'memory',
+            '存放 AI 自动提取的角色状态、情节进展等记忆文件');
+
+        this.addFolderSetting(mainContainer, '规划文件夹', 'plan',
+            '存放章节规划、故事规划等文档');
+
         // Bottom buttons
         const buttonContainer = contentEl.createDiv('folder-config-buttons');
         
