@@ -2747,6 +2747,22 @@ Design Tokens are imported first to establish the design system foundation.
     margin-left: auto;
 }
 
+.voyaru-plan-card-open-btn {
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 2px;
+    border-radius: 3px;
+    opacity: 0.6;
+    transition: opacity 0.15s;
+}
+
+.voyaru-plan-card-open-btn:hover {
+    opacity: 1;
+    color: var(--text-normal);
+}
+
 .voyaru-plan-card-content {
     padding: 12px;
     max-height: 400px;

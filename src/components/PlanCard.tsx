@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { CheckIcon, StopIcon, EditIcon, TrashIcon, FileIcon } from './Icons';
+import React, { useState, useEffect, useRef } from 'react';
+import { CheckIcon, StopIcon, EditIcon, TrashIcon, FileIcon, ExternalLinkIcon } from './Icons';
 
 interface PlanCardProps {
     planPath: string;
@@ -12,6 +12,7 @@ interface PlanCardProps {
     onContentChange?: (newContent: string) => void;
     onAbortKeep: (planPath: string) => void;
     onAbortDelete: (planPath: string) => void;
+    onOpenFile?: (planPath: string) => void;
 }
 
 export const PlanCard: React.FC<PlanCardProps> = ({
@@ -24,12 +25,23 @@ export const PlanCard: React.FC<PlanCardProps> = ({
     onRevise,
     onContentChange,
     onAbortKeep,
-    onAbortDelete
+    onAbortDelete,
+    onOpenFile
 }) => {
     const [showReviseInput, setShowReviseInput] = useState(false);
     const [reviseNote, setReviseNote] = useState('');
     const [editedContent, setEditedContent] = useState(content);
     const [confirmMessage, setConfirmMessage] = useState('已确认章节规划，请按照规划开始编写章节正文。');
+    // Track whether the last content change originated from this component (to avoid feedback loop)
+    const isLocalEditRef = useRef(false);
+
+    // Sync editedContent when content prop changes from an external source (e.g. file watcher)
+    useEffect(() => {
+        if (!isLocalEditRef.current) {
+            setEditedContent(content);
+        }
+        isLocalEditRef.current = false;
+    }, [content]);
 
     const handleConfirm = () => {
         onConfirm(planPath, chapterPath, editedContent, confirmMessage);
@@ -49,6 +61,15 @@ export const PlanCard: React.FC<PlanCardProps> = ({
                 <span className="voyaru-plan-card-icon"><FileIcon size={14} /></span>
                 <span className="voyaru-plan-card-title">章节规划</span>
                 <span className="voyaru-plan-card-path">{chapterPath}</span>
+                {onOpenFile && (
+                    <span
+                        className="voyaru-plan-card-open-btn"
+                        onClick={() => onOpenFile(planPath)}
+                        title="在编辑器中打开"
+                    >
+                        <ExternalLinkIcon size={13} />
+                    </span>
+                )}
             </div>
             <div className="voyaru-plan-card-content">
                 {confirmed ? (
@@ -58,6 +79,7 @@ export const PlanCard: React.FC<PlanCardProps> = ({
                         className="voyaru-plan-card-body voyaru-plan-card-body-editable"
                         value={editedContent}
                         onChange={e => {
+                            isLocalEditRef.current = true;
                             setEditedContent(e.target.value);
                             onContentChange?.(e.target.value);
                         }}

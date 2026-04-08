@@ -115,6 +115,42 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         };
     }, [editingMessageId]);
 
+    // Plan file watcher: sync external edits (editor) back into PlanCard
+    const planSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const isWritingPlanRef = useRef(false); // prevent disk-write → vault.modify → re-read loop
+
+    useEffect(() => {
+        const eventRef = plugin.app.vault.on('modify', async (file: { path: string }) => {
+            if (isWritingPlanRef.current) return;
+            if (!file.path.endsWith('.plan.md')) return;
+            // Find any unconfirmed plan message matching this file
+            setMessages(prev => {
+                const idx = prev.findIndex(
+                    m => m.planData && !m.planData.confirmed && m.planData.planPath === file.path
+                );
+                if (idx === -1) return prev;
+                // Schedule async read outside setState
+                (async () => {
+                    try {
+                        const raw = await plugin.aiService.fs.readFile(file.path);
+                        // Strip YAML frontmatter (---\n...\n---\n)
+                        const fmEnd = raw.indexOf('---', 3);
+                        const body = fmEnd !== -1 ? raw.slice(fmEnd + 3).replace(/^\n+/, '') : raw;
+                        setMessages(prev2 => prev2.map(m =>
+                            m.planData && !m.planData.confirmed && m.planData.planPath === file.path
+                                ? { ...m, planData: { ...m.planData, content: body } }
+                                : m
+                        ));
+                    } catch (e) {
+                        console.warn('[PlanCard] Failed to read modified plan file:', e);
+                    }
+                })();
+                return prev;
+            });
+        });
+        return () => { plugin.app.vault.offref(eventRef); };
+    }, []);
+
     // 调试：追踪 showWaitingMessage 状态变化
     useEffect(() => {
         console.log('[WaitingMessage] State changed:', showWaitingMessage);
@@ -1429,7 +1465,15 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                 confirmed: false
                             }
                         };
-                        setMessages(prev => [...prev, planMsg]);
+                        setMessages(prev => {
+                            // Mark the proposePlan tool call as completed
+                            const updated = prev.map(m =>
+                                m.type === 'tool_result' && m.tool === 'proposePlan' && m.status === 'running'
+                                    ? { ...m, status: 'completed' as const, endTime: Date.now() }
+                                    : m
+                            );
+                            return [...updated, planMsg];
+                        });
                     } else if (chunk.type === 'debug_info') {
                         // Update the user message with debug info
                         const debugData = chunk.debugData;
@@ -1977,6 +2021,25 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                 ? { ...msg, planData: { ...msg.planData!, content: newContent } }
                                 : msg
                         ));
+                        // Debounce-save to disk so editor reflects chat edits
+                        if (planSaveTimerRef.current) clearTimeout(planSaveTimerRef.current);
+                        planSaveTimerRef.current = setTimeout(async () => {
+                            try {
+                                isWritingPlanRef.current = true;
+                                await plugin.aiService.fs.updatePlanContent(m.planData!.planPath, newContent);
+                            } catch (e) {
+                                console.warn('[PlanCard] Failed to save plan to disk:', e);
+                            } finally {
+                                isWritingPlanRef.current = false;
+                            }
+                        }, 800);
+                    }}
+                    onOpenFile={async (planPath) => {
+                        try {
+                            await plugin.app.workspace.openLinkText(planPath, '', true);
+                        } catch (e) {
+                            console.warn('[PlanCard] Failed to open plan file:', e);
+                        }
                     }}
                     onRevise={(revisionNote) => {
                         const reviseMsg = `规划修改意见：${revisionNote}\n\n请根据上述意见重新生成章节规划。`;
