@@ -216,6 +216,7 @@ export const AnnotationPanelComponent: React.FC<Props> = ({ plugin, view }) => {
         message += '\n请综合所有批注，对文章进行修改并写回文件。';
 
         const event = new CustomEvent('voyaru-annotation-revision', {
+            // Use settings value (not local state) — settings are the source of truth persisted to disk
             detail: { message, filePath, model: plugin.settings.annotationRevisionModel || 'follow' }
         });
         (chatLeaf.view as any).contentEl.dispatchEvent(event);
