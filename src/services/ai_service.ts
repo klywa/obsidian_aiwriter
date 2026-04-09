@@ -73,7 +73,16 @@ export class AIService {
         // 优先使用provider的selectedModel，其次使用旧字段model，最后使用默认值
         return provider?.selectedModel || this.settings.model || 'gemini-2.0-flash';
     }
-    
+
+    private getModelForFeature(feature: 'memory' | 'reflection'): string {
+        const settingKey = feature === 'memory'
+            ? 'memoryExtractionModel'
+            : 'writerReflectionModel';
+        const value = (this.settings as any)[settingKey] as string | undefined;
+        if (!value || value === 'follow') return this.getCurrentModel();
+        return value;
+    }
+
     async updateSettings(settings: VoyaruSettings) {
         const oldProviderId = this.settings.activeProviderId;
         const oldProvider = this.getActiveProvider();
@@ -561,7 +570,7 @@ export class AIService {
 
         // Create temp session
         const chat = this.genAI.chats.create({
-            model: this.getCurrentModel(),
+            model: this.getModelForFeature('memory'),
             config: {
                 systemInstruction: extractionSystemPrompt,
                 tools: [],
@@ -686,6 +695,102 @@ export class AIService {
                 console.error(`[Memory] Failed to extract from ${chapterPath}:`, err);
             }
         }
+    }
+
+    /**
+     * Auto-section markers used in WRITER.md for AI-managed guidelines.
+     */
+    private static readonly WRITER_AUTO_START = '<!-- voyaru-auto-guidelines-start -->';
+    private static readonly WRITER_AUTO_END = '<!-- voyaru-auto-guidelines-end -->';
+
+    /**
+     * Reflect on a chapter modification to extract writing lessons and update WRITER.md auto section.
+     * Only called for modifications (previousContent !== null), not for new file creation.
+     */
+    private async performWriterMdReflection(
+        originalContent: string,
+        modifiedContent: string,
+        userInstruction: string,
+        abortSignal?: AbortSignal
+    ): Promise<{ updated: boolean } | null> {
+        if (!this.genAI) {
+            throw new Error('AI client not initialized');
+        }
+
+        console.log('[Reflection] Starting writer reflection');
+
+        // Read existing WRITER.md and extract auto section
+        const writerMdContent = await this.readWriterMd();
+        let existingGuidelines = '';
+        if (writerMdContent) {
+            const startIdx = writerMdContent.indexOf(AIService.WRITER_AUTO_START);
+            const endIdx = writerMdContent.indexOf(AIService.WRITER_AUTO_END);
+            if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+                existingGuidelines = writerMdContent
+                    .slice(startIdx + AIService.WRITER_AUTO_START.length, endIdx)
+                    .trim();
+            }
+        }
+
+        // Build prompts
+        const basePrompt = this.getProcessedSystemPrompt();
+        const systemPrompt = this.promptService.getReflectionSystemPrompt(basePrompt);
+        const userMessage = this.promptService.getReflectionUserMessage({
+            userInstruction,
+            originalContent,
+            modifiedContent,
+            existingGuidelines: existingGuidelines || '（暂无）'
+        });
+
+        // Create isolated chat session for reflection
+        const reflectionChat = this.genAI.chats.create({
+            model: this.getModelForFeature('reflection'),
+            config: {
+                systemInstruction: systemPrompt,
+                tools: [],
+            },
+            history: []
+        });
+
+        let newAutoContent = '';
+        const stream = await reflectionChat.sendMessageStream({ message: userMessage });
+        for await (const chunk of stream) {
+            if (abortSignal?.aborted) break;
+            const text = chunk.text;
+            if (text) newAutoContent += text;
+        }
+        newAutoContent = newAutoContent.trim();
+
+        if (!newAutoContent) {
+            console.log('[Reflection] No guidelines generated');
+            return { updated: false };
+        }
+
+        // Build new WRITER.md content: preserve user section, replace auto section
+        const autoBlock = `${AIService.WRITER_AUTO_START}\n${newAutoContent}\n${AIService.WRITER_AUTO_END}`;
+
+        let newWriterMd: string;
+        if (writerMdContent) {
+            const startIdx = writerMdContent.indexOf(AIService.WRITER_AUTO_START);
+            const endIdx = writerMdContent.indexOf(AIService.WRITER_AUTO_END);
+            if (startIdx !== -1 && endIdx !== -1) {
+                // Replace existing auto section
+                newWriterMd =
+                    writerMdContent.slice(0, startIdx) +
+                    autoBlock +
+                    writerMdContent.slice(endIdx + AIService.WRITER_AUTO_END.length);
+            } else {
+                // No markers found — append auto section
+                newWriterMd = writerMdContent.trimEnd() + '\n\n' + autoBlock + '\n';
+            }
+        } else {
+            // WRITER.md doesn't exist yet — create with auto section only
+            newWriterMd = autoBlock + '\n';
+        }
+
+        await this.fs.writeFile('WRITER.md', newWriterMd);
+        console.log('[Reflection] WRITER.md updated');
+        return { updated: true };
     }
 
     private extractCheckResult(response: string): string {
@@ -1457,6 +1562,17 @@ export class AIService {
                                             }
                                         }
 
+                                        // Self-evolution reflection (only for modifications, not new files)
+                                        if (isChapterFile && previousContent !== null && this.settings.enableSelfEvolution) {
+                                            yield { type: "tool_call_start", tool: "writerReflect", args: { filePath: targetPath } };
+                                            try {
+                                                const reflectResult = await this.performWriterMdReflection(previousContent, finalChapterContent, newMessage, abortSignal);
+                                                yield { type: "tool_result", tool: "writerReflect", args: { filePath: targetPath }, result: reflectResult?.updated ? '写作指南已更新。' : '未发现需要更新的经验。' };
+                                            } catch (reflectErr: any) {
+                                                yield { type: "tool_result", tool: "writerReflect", args: { filePath: targetPath }, result: `反思失败：${reflectErr.message}`, error: true };
+                                            }
+                                        }
+
                                         // 跳过后续的tool_result yield（因为已经yield过了）
                                         functionResponses.push({
                                             functionResponse: {
@@ -1504,6 +1620,17 @@ export class AIService {
                                     };
                                 } catch (memErr: any) {
                                     yield { type: "tool_result", tool: "memoryExtract", args: { filePath: targetPath }, result: `记忆提取失败：${memErr.message}`, error: true };
+                                }
+                            }
+
+                            // Self-evolution reflection (only for modifications, not new files)
+                            if (isChapterFile && previousContent !== null && this.settings.enableSelfEvolution) {
+                                yield { type: "tool_call_start", tool: "writerReflect", args: { filePath: targetPath } };
+                                try {
+                                    const reflectResult = await this.performWriterMdReflection(previousContent, finalChapterContent, newMessage, abortSignal);
+                                    yield { type: "tool_result", tool: "writerReflect", args: { filePath: targetPath }, result: reflectResult?.updated ? '写作指南已更新。' : '未发现需要更新的经验。' };
+                                } catch (reflectErr: any) {
+                                    yield { type: "tool_result", tool: "writerReflect", args: { filePath: targetPath }, result: `反思失败：${reflectErr.message}`, error: true };
                                 }
                             }
 
@@ -1672,6 +1799,18 @@ export class AIService {
                                         };
                                     } catch (memErr: any) {
                                         yield { type: "tool_result", tool: "memoryExtract", args: { filePath: toolArgs.path }, result: `记忆提取失败：${memErr.message}`, error: true };
+                                    }
+                                }
+
+                                // Self-evolution reflection for editFile (always a modification)
+                                if (isChapterFile && shouldPostCheck && previousContent !== null && this.settings.enableSelfEvolution) {
+                                    const finalContent = finalEditContent || await this.fs.readFile(toolArgs.path);
+                                    yield { type: "tool_call_start", tool: "writerReflect", args: { filePath: toolArgs.path } };
+                                    try {
+                                        const reflectResult = await this.performWriterMdReflection(previousContent, finalContent, newMessage, abortSignal);
+                                        yield { type: "tool_result", tool: "writerReflect", args: { filePath: toolArgs.path }, result: reflectResult?.updated ? '写作指南已更新。' : '未发现需要更新的经验。' };
+                                    } catch (reflectErr: any) {
+                                        yield { type: "tool_result", tool: "writerReflect", args: { filePath: toolArgs.path }, result: `反思失败：${reflectErr.message}`, error: true };
                                     }
                                 }
 
