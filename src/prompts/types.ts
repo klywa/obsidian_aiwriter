@@ -29,7 +29,12 @@ export interface ToolDefinition {
 
 export interface FunctionParamProp {
     type: string;
-    description: I18nText;
+    description?: I18nText;
+    // For ARRAY type: defines the schema of each item
+    items?: FunctionParamProp;
+    // For OBJECT type: defines nested properties
+    properties?: Record<string, FunctionParamProp>;
+    required?: string[];
 }
 
 export interface FunctionDef {

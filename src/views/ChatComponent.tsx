@@ -15,6 +15,7 @@ import { ErrorMessage } from '../components/ErrorMessage';
 import { Toast } from '../components/Toast';
 import { WaitingMessage } from '../components/WaitingMessage';
 import { PlanCard } from '../components/PlanCard';
+import { AskUserCard } from '../components/AskUserCard';
 
 export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerEl?: HTMLElement }) => {
     const [sessions, setSessions] = useState<Session[]>([]);
@@ -1476,6 +1477,31 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                             );
                             return [...updated, planMsg];
                         });
+                    } else if (chunk.type === 'ask_user') {
+                        const askUserMsg: Message = {
+                            id: `ask-user-${Date.now()}-${Math.random()}`,
+                            role: 'model',
+                            type: 'text',
+                            content: '__ASK_USER__',
+                            askUserData: {
+                                question: chunk.question,
+                                context: chunk.context,
+                                options: chunk.options,
+                                multiSelect: chunk.multiSelect ?? false,
+                                recommendation: chunk.recommendation,
+                                confirmed: false,
+                                selectedIndices: []
+                            }
+                        };
+                        setMessages(prev => {
+                            // Mark the askUser tool call as completed
+                            const updated = prev.map(m =>
+                                m.type === 'tool_result' && m.tool === 'askUser' && m.status === 'running'
+                                    ? { ...m, status: 'completed' as const, endTime: Date.now() }
+                                    : m
+                            );
+                            return [...updated, askUserMsg];
+                        });
                     } else if (chunk.type === 'debug_info') {
                         // Update the user message with debug info
                         const debugData = chunk.debugData;
@@ -2067,6 +2093,36 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                 : msg
                         ));
                         new Notice('规划已删除，任务已中止。');
+                    }}
+                />
+            );
+        }
+
+        // askUser card
+        if (m.content === '__ASK_USER__' && m.askUserData) {
+            return (
+                <AskUserCard
+                    key={m.id}
+                    question={m.askUserData.question}
+                    context={m.askUserData.context}
+                    options={m.askUserData.options}
+                    multiSelect={m.askUserData.multiSelect}
+                    recommendation={m.askUserData.recommendation}
+                    isConfirmed={m.askUserData.confirmed}
+                    confirmedSelections={m.askUserData.selectedIndices}
+                    onConfirm={(selectedIndices) => {
+                        // Mark as confirmed in state
+                        setMessages(prev => prev.map(msg =>
+                            msg.id === m.id
+                                ? { ...msg, askUserData: { ...msg.askUserData!, confirmed: true, selectedIndices } }
+                                : msg
+                        ));
+                        // Build result message and send to AI
+                        const selectedLabels = selectedIndices.map(i => m.askUserData!.options[i]?.label).filter(Boolean);
+                        const selectionText = m.askUserData!.multiSelect
+                            ? `[User Decision] Question: "${m.askUserData!.question}"\nSelected: [${selectedLabels.map(l => `"${l}"`).join(', ')}]`
+                            : `[User Decision] Question: "${m.askUserData!.question}"\nSelected: "${selectedLabels[0]}"`;
+                        handleSendMessage(selectionText);
                     }}
                 />
             );

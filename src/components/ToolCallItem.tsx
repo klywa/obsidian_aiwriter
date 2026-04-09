@@ -123,6 +123,11 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
                 }
                 return `记忆提取完成: ${filePath}`;
             }
+            case 'askUser': {
+                const question = args.question || '...';
+                if (isRunning || isPending) return `询问用户：${question}`;
+                return `用户决策请求：${question}`;
+            }
             default:
                 return message.tool || 'Unknown operation';
         }

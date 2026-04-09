@@ -54,6 +54,15 @@ export interface Message {
         confirmed: boolean;
         aborted?: boolean;
     };
+    askUserData?: {
+        question: string;
+        context: string;
+        options: Array<{ label: string; pros: string; cons: string }>;
+        multiSelect: boolean;
+        recommendation?: number;
+        confirmed: boolean;
+        selectedIndices: number[];
+    };
 }
 
 export interface Session {

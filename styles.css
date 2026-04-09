@@ -3173,3 +3173,203 @@ Design Tokens are imported first to establish the design system foundation.
     color: var(--text-error);
     border-color: var(--text-error);
 }
+
+/* ========== AskUserCard ========== */
+
+.voyaru-ask-user-card {
+    border: 1px solid var(--background-modifier-border);
+    border-left: 3px solid var(--interactive-accent);
+    border-radius: 6px;
+    margin: 8px 0;
+    background: var(--background-secondary);
+    overflow: hidden;
+}
+
+.voyaru-ask-user-card--confirmed {
+    border-left-color: var(--text-muted);
+    opacity: 0.85;
+}
+
+.voyaru-ask-user-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--background-modifier-hover);
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.voyaru-ask-user-card-icon {
+    color: var(--interactive-accent);
+    display: inline-flex;
+    align-items: center;
+}
+
+.voyaru-ask-user-card-title {
+    font-weight: 600;
+    font-size: 0.9em;
+    color: var(--text-normal);
+}
+
+.voyaru-ask-user-card-question {
+    padding: 10px 12px 4px;
+    font-size: 0.95em;
+    font-weight: 600;
+    color: var(--text-normal);
+    line-height: 1.5;
+}
+
+.voyaru-ask-user-card-context {
+    padding: 0 12px 8px;
+    font-size: 0.8em;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.voyaru-ask-user-card-options {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 4px 12px 8px;
+}
+
+.voyaru-ask-user-option {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 5px;
+    padding: 8px 10px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    background: var(--background-primary);
+}
+
+.voyaru-ask-user-option:hover:not(.voyaru-ask-user-option--readonly) {
+    border-color: var(--interactive-accent);
+    background: var(--background-modifier-hover);
+}
+
+.voyaru-ask-user-option--selected {
+    border-color: var(--interactive-accent);
+    background: rgba(var(--interactive-accent-rgb, 100, 149, 237), 0.08);
+}
+
+.voyaru-ask-user-option--recommended {
+    border-color: var(--color-green, #4CAF50);
+}
+
+.voyaru-ask-user-option--readonly {
+    cursor: default;
+}
+
+.voyaru-ask-user-option-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.voyaru-ask-user-option-indicator {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid var(--background-modifier-border);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.voyaru-ask-user-option--selected .voyaru-ask-user-option-indicator {
+    border-color: var(--interactive-accent);
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.voyaru-ask-user-option-indicator--checkbox {
+    border-radius: 3px;
+}
+
+.voyaru-ask-user-option-label {
+    font-weight: 600;
+    font-size: 0.9em;
+    color: var(--text-normal);
+    flex: 1;
+}
+
+.voyaru-ask-user-option-recommended-badge {
+    font-size: 0.72em;
+    padding: 1px 6px;
+    border-radius: 10px;
+    background: var(--color-green, #4CAF50);
+    color: #fff;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.voyaru-ask-user-option-analysis {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-left: 24px;
+}
+
+.voyaru-ask-user-option-pros,
+.voyaru-ask-user-option-cons {
+    display: flex;
+    gap: 6px;
+    font-size: 0.8em;
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+
+.voyaru-ask-user-option-analysis-label {
+    font-weight: 700;
+    flex-shrink: 0;
+    min-width: 14px;
+}
+
+.voyaru-ask-user-option-pros .voyaru-ask-user-option-analysis-label {
+    color: var(--color-green, #4CAF50);
+}
+
+.voyaru-ask-user-option-cons .voyaru-ask-user-option-analysis-label {
+    color: var(--text-error, #f28b82);
+}
+
+.voyaru-ask-user-card-actions {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.voyaru-ask-user-confirm-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 14px;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+    font-size: 0.875em;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    transition: opacity 0.15s;
+}
+
+.voyaru-ask-user-confirm-btn:hover:not(:disabled) {
+    opacity: 0.85;
+}
+
+.voyaru-ask-user-confirm-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.voyaru-ask-user-confirmed-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.875em;
+    color: var(--text-muted);
+}

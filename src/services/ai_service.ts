@@ -1282,6 +1282,7 @@ export class AIService {
             if (functionCalls.length > 0) {
                  const functionResponses: Part[] = [];
                  let stopAfterProposePlan = false;
+                let stopAfterAskUser = false;
 
                  for (const call of functionCalls) {
                      const { name, args, thoughtSignature } = call;
@@ -1319,6 +1320,30 @@ export class AIService {
                                  thoughtSignature: thoughtSignature
                              });
                              stopAfterProposePlan = true;
+                             continue;
+                         }
+                         if (name === "askUser") {
+                             const { question, context, options, multiSelect, recommendation } = toolArgs;
+
+                             // Yield ask_user chunk so the UI renders the AskUserCard
+                             yield {
+                                 type: "ask_user",
+                                 question,
+                                 context,
+                                 options,
+                                 multiSelect: multiSelect ?? false,
+                                 recommendation
+                             };
+
+                             // Complete the function call cycle so chat history stays consistent
+                             functionResponses.push({
+                                 functionResponse: {
+                                     name: name,
+                                     response: { result: "Waiting for user selection." }
+                                 },
+                                 thoughtSignature: thoughtSignature
+                             });
+                             stopAfterAskUser = true;
                              continue;
                          }
                         if (name === "writeFile") {
@@ -1709,7 +1734,32 @@ export class AIService {
                      } catch (e) {
                          console.warn('[PlanMode] Failed to send proposePlan tool response to chat history:', e);
                      }
+                     // Yield history update so UI's chatHistory stays in sync for resume
+                     try {
+                         const updatedHistory = await chat.getHistory();
+                         yield { type: 'history_update', history: updatedHistory };
+                     } catch (e) {
+                         console.warn('[PlanMode] Failed to get history after proposePlan:', e);
+                     }
                      return; // Stop the generator — wait for user to send [Plan Confirmed]
+                 }
+
+                 // If askUser was called, send the tool response to keep chat history consistent,
+                 // then STOP the loop. The AI will continue after the user submits their selection.
+                 if (stopAfterAskUser) {
+                     try {
+                         await chat.sendMessage(functionResponses);
+                     } catch (e) {
+                         console.warn('[askUser] Failed to send askUser tool response to chat history:', e);
+                     }
+                     // Yield history update so UI's chatHistory stays in sync for resume
+                     try {
+                         const updatedHistory = await chat.getHistory();
+                         yield { type: 'history_update', history: updatedHistory };
+                     } catch (e) {
+                         console.warn('[askUser] Failed to get history after askUser:', e);
+                     }
+                     return; // Stop the generator — wait for user selection to be sent as a new message
                  }
 
                  msgToSend = functionResponses;

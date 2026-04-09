@@ -181,6 +181,44 @@ export class PromptService {
     }
 
     /**
+     * Recursively convert a FunctionParamProp schema to Gemini API format.
+     * Supports nested ARRAY (with items) and OBJECT (with properties) types.
+     */
+    private convertParamSchema(propDef: import('../prompts/types').FunctionParamProp): any {
+        const typeMap: Record<string, Type> = {
+            'OBJECT': Type.OBJECT,
+            'STRING': Type.STRING,
+            'NUMBER': Type.NUMBER,
+            'BOOLEAN': Type.BOOLEAN,
+            'ARRAY': Type.ARRAY
+        };
+
+        const result: any = {
+            type: typeMap[propDef.type] || Type.STRING,
+        };
+
+        if (propDef.description) {
+            result.description = this.getText(propDef.description);
+        }
+
+        if (propDef.type === 'OBJECT' && propDef.properties) {
+            result.properties = {};
+            for (const [name, nested] of Object.entries(propDef.properties)) {
+                result.properties[name] = this.convertParamSchema(nested);
+            }
+            if (propDef.required) {
+                result.required = propDef.required;
+            }
+        }
+
+        if (propDef.type === 'ARRAY' && propDef.items) {
+            result.items = this.convertParamSchema(propDef.items);
+        }
+
+        return result;
+    }
+
+    /**
      * Get function declaration for AI tool calling
      * @param toolName - Name of the tool (writeFile, readFile, deleteFile)
      */
@@ -194,7 +232,6 @@ export class PromptService {
             throw new Error(`Tool definition not found: ${toolName}`);
         }
 
-        // Convert string type to Type enum
         const typeMap: Record<string, Type> = {
             'OBJECT': Type.OBJECT,
             'STRING': Type.STRING,
@@ -203,13 +240,10 @@ export class PromptService {
             'ARRAY': Type.ARRAY
         };
 
-        // Build properties object
+        // Build properties object, supporting nested ARRAY/OBJECT schemas
         const properties: Record<string, any> = {};
         for (const [propName, propDef] of Object.entries(funcDef.parameters.properties)) {
-            properties[propName] = {
-                type: typeMap[propDef.type] || Type.STRING,
-                description: this.getText(propDef.description)
-            };
+            properties[propName] = this.convertParamSchema(propDef);
         }
 
         return {
