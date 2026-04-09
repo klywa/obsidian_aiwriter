@@ -329,16 +329,27 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         };
     }, [messages, currentSessionId]);
 
-    // 同步chatHistory到session
+    // 同步chatHistory到session（防抖，避免流式响应期间频繁触发保存链）
+    const syncChatHistoryRef = useRef<NodeJS.Timeout | null>(null);
     useEffect(() => {
         if (currentSessionId && chatHistory.length >= 0) {
-            setSessions(prev => prev.map(s => {
-                if (s.id === currentSessionId) {
-                    return { ...s, chatHistory: chatHistory };
-                }
-                return s;
-            }));
+            if (syncChatHistoryRef.current) {
+                clearTimeout(syncChatHistoryRef.current);
+            }
+            syncChatHistoryRef.current = setTimeout(() => {
+                setSessions(prev => prev.map(s => {
+                    if (s.id === currentSessionId) {
+                        return { ...s, chatHistory: chatHistory };
+                    }
+                    return s;
+                }));
+            }, 500);
         }
+        return () => {
+            if (syncChatHistoryRef.current) {
+                clearTimeout(syncChatHistoryRef.current);
+            }
+        };
     }, [chatHistory, currentSessionId]);
 
     // 自动折叠超过对话窗口一半高度的用户query
@@ -2109,6 +2120,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     multiSelect={m.askUserData.multiSelect}
                     recommendation={m.askUserData.recommendation}
                     isConfirmed={m.askUserData.confirmed}
+                    isCancelled={m.askUserData.cancelled}
                     confirmedSelections={m.askUserData.selectedIndices}
                     onConfirm={(selectedIndices) => {
                         // Mark as confirmed in state
@@ -2123,6 +2135,14 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                             ? `[User Decision] Question: "${m.askUserData!.question}"\nSelected: [${selectedLabels.map(l => `"${l}"`).join(', ')}]`
                             : `[User Decision] Question: "${m.askUserData!.question}"\nSelected: "${selectedLabels[0]}"`;
                         handleSendMessage(selectionText);
+                    }}
+                    onCancel={() => {
+                        // Mark as cancelled in state (no message sent to AI)
+                        setMessages(prev => prev.map(msg =>
+                            msg.id === m.id
+                                ? { ...msg, askUserData: { ...msg.askUserData!, cancelled: true } }
+                                : msg
+                        ));
                     }}
                 />
             );

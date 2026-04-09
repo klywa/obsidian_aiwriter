@@ -61,6 +61,7 @@ export interface Message {
         multiSelect: boolean;
         recommendation?: number;
         confirmed: boolean;
+        cancelled?: boolean;
         selectedIndices: number[];
     };
 }

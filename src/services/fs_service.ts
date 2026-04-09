@@ -172,50 +172,22 @@ export class FSService {
     }
 
     /**
-     * Refresh the view of an open file to show latest changes
+     * Refresh the view of an open file to show latest changes.
+     * Uses vault.trigger('modified') which causes Obsidian to re-render open views
+     * without swapping active leaves, so it does not disrupt focus or input.
      * @param filePath - Path to the file to refresh
      */
     private refreshOpenFileView(filePath: string): void {
         try {
-            const { workspace } = this.app;
-            const { MarkdownView } = require('obsidian');
-
-            // Find all leaves displaying this file
-            const leavesToRefresh: any[] = [];
-            workspace.iterateAllLeaves((leaf: any) => {
-                if (leaf.view instanceof MarkdownView &&
-                    leaf.view.file?.path === filePath) {
-                    leavesToRefresh.push(leaf);
-                }
-            });
-
-            // Refresh each leaf by re-activating it
-            leavesToRefresh.forEach(leaf => {
-                // Store current state
-                const wasActive = workspace.activeLeaf === leaf;
-                const currentMode = leaf.view.getMode?.();
-
-                // Trigger refresh by setting as active (forces reload)
-                if (!wasActive) {
-                    // If not active, briefly activate and restore
-                    const previousActive = workspace.activeLeaf;
-                    workspace.setActiveLeaf(leaf, { focus: false });
-                    if (previousActive) {
-                        workspace.setActiveLeaf(previousActive, { focus: false });
-                    }
-                } else {
-                    // If already active, force a subtle refresh
-                    // This will update the content without losing cursor position
-                    leaf.view.onLoadFile?.(leaf.view.file);
-                }
-            });
-
-            if (leavesToRefresh.length > 0) {
-                console.log(`[FSService] Refreshed ${leavesToRefresh.length} open view(s) for ${filePath}`);
+            const normalized = normalizePath(filePath);
+            const file = this.app.vault.getAbstractFileByPath(normalized);
+            if (file) {
+                // Trigger the vault 'modified' event so open MarkdownView instances
+                // re-read the file content without any focus changes.
+                this.app.vault.trigger('modified', file);
             }
         } catch (error) {
             console.error('[FSService] Failed to refresh open file view:', error);
-            // Non-critical error - don't throw, file was still modified successfully
         }
     }
 

@@ -18,6 +18,8 @@ export default class VoyaruPlugin extends Plugin {
     promptService: PromptService;
     localEditStatusModal: LocalEditStatusModal | null = null;
     private localEditAbortController: AbortController | null = null;
+    // 防止 saveSettings 写入 data.json 后触发自身的 vault modify 事件重新加载
+    private _isSavingSettings: boolean = false;
 
     // Cached waiting messages from chapters (legacy, kept for compatibility)
     private cachedChapterSentences: string[] = [];
@@ -251,19 +253,15 @@ export default class VoyaruPlugin extends Plugin {
 		this.addSettingTab(new VoyaruSettingTab(this.app, this));
 
         // 监听配置文件变化（用于多端同步）
+        // 注意：跳过本插件自身写入触发的事件，避免保存→事件→重载的死循环
         this.registerEvent(this.app.vault.on('modify', async (file) => {
             if (file.path === `${this.manifest.dir}/data.json`) {
+                if (this._isSavingSettings) return;
                 console.log('Detected configuration change from file system (sync), reloading settings...');
                 await this.loadSettings();
-                
-                // 如果AI服务已初始化，更新其配置
                 if (this.aiService) {
                     this.aiService.updateSettings(this.settings);
                 }
-                
-                // 通知UI更新（如果有必要）
-                // 目前UI主要通过props或自行读取plugin.settings，
-                // 对于React组件，可能需要一种机制来通知更新，但主要配置如API Key等会立即生效。
             }
         }));
 	}
@@ -692,9 +690,13 @@ export default class VoyaruPlugin extends Plugin {
 	}
 
 	async saveSettings() {
-		await this.saveData(this.settings);
+        this._isSavingSettings = true;
+        try {
+            await this.saveData(this.settings);
+        } finally {
+            this._isSavingSettings = false;
+        }
         if (this.aiService) {
-            // 更新 AI Service 设置（会触发适配器重新初始化）
             await this.aiService.updateSettings(this.settings);
         } else {
             console.warn('AI Service not initialized when saving settings');

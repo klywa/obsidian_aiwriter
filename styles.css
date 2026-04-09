@@ -3339,6 +3339,7 @@ Design Tokens are imported first to establish the design system foundation.
 .voyaru-ask-user-card-actions {
     display: flex;
     align-items: center;
+    gap: 8px;
     padding: 8px 12px;
     border-top: 1px solid var(--background-modifier-border);
 }
@@ -3364,6 +3365,25 @@ Design Tokens are imported first to establish the design system foundation.
 .voyaru-ask-user-confirm-btn:disabled {
     opacity: 0.45;
     cursor: not-allowed;
+}
+
+.voyaru-ask-user-cancel-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 14px;
+    border-radius: 4px;
+    border: 1px solid var(--background-modifier-border);
+    cursor: pointer;
+    font-size: 0.875em;
+    background: transparent;
+    color: var(--text-muted);
+    transition: opacity 0.15s;
+}
+
+.voyaru-ask-user-cancel-btn:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
 }
 
 .voyaru-ask-user-confirmed-label {

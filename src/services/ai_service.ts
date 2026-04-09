@@ -1284,6 +1284,13 @@ export class AIService {
                  let stopAfterProposePlan = false;
                 let stopAfterAskUser = false;
 
+                // 将 askUser / proposePlan 移到末尾处理，确保 writeFile/editFile
+                // 及其内联的记忆提取在 generator 停止前全部完成。
+                functionCalls.sort((a, b) => {
+                    const stopTools = ['askUser', 'proposePlan'];
+                    return (stopTools.includes(a.name) ? 1 : 0) - (stopTools.includes(b.name) ? 1 : 0);
+                });
+
                  for (const call of functionCalls) {
                      const { name, args, thoughtSignature } = call;
                      // New SDK args might be object directly? Yes.
@@ -1725,6 +1732,9 @@ export class AIService {
 
                  // Check if we're using SDK's ChatSession (should auto-handle signatures)
                  console.log(`[AIService] Using SDK ChatSession for function response - SDK should handle signature preservation automatically`);
+
+                 // 注意：writeFile/editFile（含内联记忆提取）已在上方 for 循环中全部完成，
+                 // 因为 askUser/proposePlan 被排序到了末尾。
 
                  // If proposePlan was called, send the tool response to keep chat history consistent,
                  // then STOP the loop. The AI must not continue until the user confirms via [Plan Confirmed].
