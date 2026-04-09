@@ -3001,6 +3001,25 @@ Design Tokens are imported first to establish the design system foundation.
     padding: 6px 8px;
     border-bottom: 1px solid var(--background-modifier-border);
     flex-shrink: 0;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.voyaru-annotation-model-select {
+    flex: 1;
+    min-width: 0;
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.voyaru-annotation-model-select:hover {
+    border-color: var(--interactive-accent);
 }
 
 .voyaru-annotation-apply-all-btn {
