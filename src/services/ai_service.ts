@@ -886,7 +886,7 @@ export class AIService {
         return fallback;
     }
 
-    async *streamChat(sessionId: string, history: Content[], newMessage: string, referencedFiles: string[] = [], abortSignal?: AbortSignal, systemInstructionOverride?: string, options?: { skipPlanMode?: boolean }): AsyncGenerator<any, void, unknown> {
+    async *streamChat(sessionId: string, history: Content[], newMessage: string, referencedFiles: string[] = [], abortSignal?: AbortSignal, systemInstructionOverride?: string, options?: { skipPlanMode?: boolean; modelOverride?: string }): AsyncGenerator<any, void, unknown> {
         try {
         // 检查API Key（使用provider而不是旧的settings.apiKey）
         const provider = this.getActiveProvider();
@@ -1101,7 +1101,7 @@ export class AIService {
 
         // Create chat using new SDK
             chat = this.genAI.chats.create({
-            model: this.getCurrentModel(),
+            model: options?.modelOverride || this.getCurrentModel(),
             config: {
                     systemInstruction: fullSystemPrompt,
                 tools: tools,
@@ -1130,7 +1130,7 @@ export class AIService {
         };
 
         // Check for large prompt that may trigger empty response bug in gemini-3-pro-preview
-        const currentModel = this.getCurrentModel();
+        const currentModel = options?.modelOverride || this.getCurrentModel();
         const estimatedTokens = this.estimateTokenCount(fullSystemPrompt) +
                                this.estimateTokenCount(typeof msgToSend === 'string' ? msgToSend : JSON.stringify(msgToSend));
 
