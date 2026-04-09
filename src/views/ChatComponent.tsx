@@ -61,6 +61,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const lastChunkTypeRef = useRef<string | null>(null); // 跟踪上一个chunk的类型（用于判断"文字→工具调用"的情况）
     const [planModeActive, setPlanModeActive] = useState<boolean>(plugin.settings.enablePlanMode);
     const skipPlanModeOnceRef = useRef<boolean>(false);
+    const overrideModelOnceRef = useRef<string | null>(null);
 
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -1181,7 +1182,12 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             console.log('Calling streamChat with history length:', historyForRequest.length, isSingleTurnMode ? '(single-turn mode)' : '');
             const skipPlanMode = skipPlanModeOnceRef.current;
             skipPlanModeOnceRef.current = false;
-            const stream = plugin.aiService.streamChat(currentSessionId, historyForRequest, messageContent, newUserMsg.referencedFiles, abortControllerRef.current.signal, undefined, skipPlanMode ? { skipPlanMode: true } : undefined);
+            const modelOverride = overrideModelOnceRef.current;
+            overrideModelOnceRef.current = null;
+            const streamOptions: { skipPlanMode?: boolean; modelOverride?: string } = {};
+            if (skipPlanMode) streamOptions.skipPlanMode = true;
+            if (modelOverride) streamOptions.modelOverride = modelOverride;
+            const stream = plugin.aiService.streamChat(currentSessionId, historyForRequest, messageContent, newUserMsg.referencedFiles, abortControllerRef.current.signal, undefined, streamOptions);
 
             let currentResponseId = `msg-${Date.now()}-response`;
             let currentResponseContent = ""; // Accumulate text for the current message ID
@@ -1606,9 +1612,12 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     useEffect(() => {
         if (!containerEl) return;
         const handler = (e: CustomEvent) => {
-            const { message, filePath } = e.detail as { message: string; filePath: string };
+            const { message, filePath, model } = e.detail as { message: string; filePath: string; model?: string };
             // Annotation revision always bypasses plan mode — user wants direct modification
             skipPlanModeOnceRef.current = true;
+            if (model && model !== 'follow') {
+                overrideModelOnceRef.current = model;
+            }
             handleSendMessage(message, [filePath]);
         };
         containerEl.addEventListener('voyaru-annotation-revision', handler as EventListener);
