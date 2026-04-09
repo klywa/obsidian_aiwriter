@@ -115,6 +115,10 @@ export interface VoyaruSettings {
     };
     enableMemory: boolean;
     autoMemoryUpdate: boolean;
+    enableSelfEvolution: boolean;
+    memoryExtractionModel: string;    // "follow" | model ID
+    writerReflectionModel: string;    // "follow" | model ID
+    annotationRevisionModel: string;  // "follow" | model ID
     tools: AgentTool[];
     postCheckItems: PostCheckItem[];
     enablePostCheck: boolean;
@@ -190,6 +194,10 @@ export const DEFAULT_SETTINGS: VoyaruSettings = {
     },
     enableMemory: false,
     autoMemoryUpdate: true,
+    enableSelfEvolution: true,
+    memoryExtractionModel: 'follow',
+    writerReflectionModel: 'follow',
+    annotationRevisionModel: 'follow',
     // Tools and postCheckItems are now loaded from prompts.json
     // Will be populated during plugin initialization if empty
     tools: [],
@@ -493,6 +501,16 @@ export class VoyaruSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     }));
         }
+
+        new Setting(containerEl)
+            .setName('启用自我进化')
+            .setDesc('AI 修改章节后自动反思本次修改，提炼写作经验和用户偏好，写入 vault 根目录的 WRITER.md（仅在修改已有章节时触发，首次创作不触发）。')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableSelfEvolution ?? true)
+                .onChange(async (value) => {
+                    this.plugin.settings.enableSelfEvolution = value;
+                    await this.plugin.saveSettings();
+                }));
 
         containerEl.createEl('h3', { text: 'UI Configuration' });
         
