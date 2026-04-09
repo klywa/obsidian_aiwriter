@@ -500,6 +500,25 @@ export class VoyaruSettingTab extends PluginSettingTab {
                         this.plugin.settings.autoMemoryUpdate = value;
                         await this.plugin.saveSettings();
                     }));
+
+            const activeProvider = this.plugin.settings.providers?.find(
+                (p: any) => p.id === this.plugin.settings.activeProviderId
+            );
+            const mainModelId = activeProvider?.selectedModel || 'gemini-3-pro-preview';
+            const mainModelName = MODELS.find(m => m.id === mainModelId)?.name || mainModelId;
+
+            new Setting(containerEl)
+                .setName('记忆归纳模型')
+                .setDesc('用于记忆归纳的 AI 模型。默认跟随主聊天模型。')
+                .addDropdown(dropdown => {
+                    dropdown.addOption('follow', `跟随主模型 (${mainModelName})`);
+                    MODELS.forEach(m => dropdown.addOption(m.id, m.name));
+                    dropdown.setValue(this.plugin.settings.memoryExtractionModel || 'follow');
+                    dropdown.onChange(async (value) => {
+                        this.plugin.settings.memoryExtractionModel = value;
+                        await this.plugin.saveSettings();
+                    });
+                });
         }
 
         new Setting(containerEl)
@@ -510,7 +529,29 @@ export class VoyaruSettingTab extends PluginSettingTab {
                 .onChange(async (value) => {
                     this.plugin.settings.enableSelfEvolution = value;
                     await this.plugin.saveSettings();
+                    this.display(); // re-render to show/hide the model dropdown
                 }));
+
+        if (this.plugin.settings.enableSelfEvolution) {
+            const activeProvider2 = this.plugin.settings.providers?.find(
+                (p: any) => p.id === this.plugin.settings.activeProviderId
+            );
+            const mainModelId2 = activeProvider2?.selectedModel || 'gemini-3-pro-preview';
+            const mainModelName2 = MODELS.find(m => m.id === mainModelId2)?.name || mainModelId2;
+
+            new Setting(containerEl)
+                .setName('自进化模型')
+                .setDesc('用于写作经验反思（自进化）的 AI 模型。默认跟随主聊天模型。')
+                .addDropdown(dropdown => {
+                    dropdown.addOption('follow', `跟随主模型 (${mainModelName2})`);
+                    MODELS.forEach(m => dropdown.addOption(m.id, m.name));
+                    dropdown.setValue(this.plugin.settings.writerReflectionModel || 'follow');
+                    dropdown.onChange(async (value) => {
+                        this.plugin.settings.writerReflectionModel = value;
+                        await this.plugin.saveSettings();
+                    });
+                });
+        }
 
         containerEl.createEl('h3', { text: 'UI Configuration' });
         
