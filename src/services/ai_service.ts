@@ -75,10 +75,9 @@ export class AIService {
     }
 
     private getModelForFeature(feature: 'memory' | 'reflection'): string {
-        const settingKey = feature === 'memory'
-            ? 'memoryExtractionModel'
-            : 'writerReflectionModel';
-        const value = (this.settings as any)[settingKey] as string | undefined;
+        const value: string = feature === 'memory'
+            ? this.settings.memoryExtractionModel
+            : this.settings.writerReflectionModel;
         if (!value || value === 'follow') return this.getCurrentModel();
         return value;
     }
