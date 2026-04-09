@@ -997,10 +997,16 @@ export class AIService {
             },
         ];
            
+        const currentModel = options?.modelOverride || this.getCurrentModel();
+        if (options?.modelOverride) {
+            console.log('[AIService] streamChat using model override:', options.modelOverride);
+        }
+
         let chat;
 
         // Check if we can reuse an existing chat session (Server Mode)
-        if (this.settings.contextMode === 'server' && sessionId && this.activeChats.has(sessionId)) {
+        // Skip cache when modelOverride is active so the correct model is used
+        if (this.settings.contextMode === 'server' && sessionId && this.activeChats.has(sessionId) && !options?.modelOverride) {
              chat = this.activeChats.get(sessionId);
              console.log(`🔄 [Server Mode] Reusing existing chat for session: ${sessionId}`);
         } else {
@@ -1101,7 +1107,7 @@ export class AIService {
 
         // Create chat using new SDK
             chat = this.genAI.chats.create({
-            model: options?.modelOverride || this.getCurrentModel(),
+            model: currentModel,
             config: {
                     systemInstruction: fullSystemPrompt,
                 tools: tools,
@@ -1109,7 +1115,7 @@ export class AIService {
             history: cleanHistory
         });
 
-            if (this.settings.contextMode === 'server' && sessionId) {
+            if (this.settings.contextMode === 'server' && sessionId && !options?.modelOverride) {
                  this.activeChats.set(sessionId, chat);
                  console.log(`💾 [Server Mode] Saved chat to activeChats for session: ${sessionId}`);
             }
@@ -1130,7 +1136,7 @@ export class AIService {
         };
 
         // Check for large prompt that may trigger empty response bug in gemini-3-pro-preview
-        const currentModel = options?.modelOverride || this.getCurrentModel();
+        // currentModel was already computed above (with modelOverride applied)
         const estimatedTokens = this.estimateTokenCount(fullSystemPrompt) +
                                this.estimateTokenCount(typeof msgToSend === 'string' ? msgToSend : JSON.stringify(msgToSend));
 
