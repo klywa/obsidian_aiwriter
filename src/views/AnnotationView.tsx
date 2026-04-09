@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type VoyaruPlugin from '../main';
 import type { AnnotationView } from './annotation_view';
+import { MODELS } from '../settings';
 import { parseAnnotations, removeAnnotationFromText, writeAnnotationBlock, addAnnotationToText } from '../editor/annotation_parser';
 import type { Annotation } from '../editor/annotation_parser';
 import { AnnotationCard } from '../components/AnnotationCard';
-import { Notice, MarkdownView } from 'obsidian';
+import { Notice, MarkdownView, TFile } from 'obsidian';
 import { VIEW_TYPE_CHAT } from './chat_view';
 import { EditorView, Decoration } from '@codemirror/view';
 import { StateEffect, StateField } from '@codemirror/state';
@@ -52,20 +53,60 @@ export const AnnotationPanelComponent: React.FC<Props> = ({ plugin, view }) => {
     const [editingAnn, setEditingAnn] = useState<Annotation | null>(null);
     const [editValue, setEditValue] = useState('');
     const refreshTimeout = useRef<number | null>(null);
+    // Tracks the last known file path so the panel works when it is the active leaf
+    const lastFilePathRef = useRef<string | null>(null);
+    const [annotationModel, setAnnotationModel] = useState<string>(
+        () => plugin.settings.annotationRevisionModel || 'follow'
+    );
+
+    const getCurrentMainModelName = (): string => {
+        const providers = plugin.settings.providers;
+        const activeId = plugin.settings.activeProviderId;
+        const provider = providers?.find((p: any) => p.id === activeId);
+        const modelId = provider?.selectedModel || 'gemini-3-pro-preview';
+        return MODELS.find(m => m.id === modelId)?.name || modelId;
+    };
+
+    /**
+     * Find the target file for the annotation panel.
+     * getActiveFile() returns null when the annotation panel itself is focused,
+     * so we fall back to lastFilePathRef, then iterate workspace leaves.
+     */
+    const findTargetFile = useCallback((): TFile | null => {
+        // 1. Try getActiveFile (works when editor is focused)
+        const activeFile = plugin.app.workspace.getActiveFile();
+        if (activeFile) return activeFile;
+
+        // 2. Fall back to last known file path
+        if (lastFilePathRef.current) {
+            const abstract = plugin.app.vault.getAbstractFileByPath(lastFilePathRef.current);
+            if (abstract instanceof TFile) return abstract;
+        }
+
+        // 3. Last resort: find any open MarkdownView with a file
+        let found: TFile | null = null;
+        plugin.app.workspace.iterateAllLeaves((leaf) => {
+            if (!found && leaf.view instanceof MarkdownView && (leaf.view as MarkdownView).file) {
+                found = (leaf.view as MarkdownView).file;
+            }
+        });
+        return found;
+    }, [plugin]);
 
     const refreshAnnotations = useCallback(() => {
-        const activeFile = plugin.app.workspace.getActiveFile();
-        if (!activeFile) {
+        const targetFile = findTargetFile();
+        if (!targetFile) {
             setAnnotations([]);
             setCurrentFilePath(null);
             return;
         }
-        setCurrentFilePath(activeFile.path);
-        plugin.app.vault.read(activeFile).then(content => {
+        lastFilePathRef.current = targetFile.path;
+        setCurrentFilePath(targetFile.path);
+        plugin.app.vault.read(targetFile).then(content => {
             const { annotations: parsed } = parseAnnotations(content);
             setAnnotations(parsed);
         }).catch(() => setAnnotations([]));
-    }, [plugin]);
+    }, [plugin, findTargetFile]);
 
     // Refresh on mount, active file change, and editor changes
     useEffect(() => {
@@ -77,8 +118,9 @@ export const AnnotationPanelComponent: React.FC<Props> = ({ plugin, view }) => {
         });
 
         const onFileModify = plugin.app.vault.on('modify', (file) => {
-            const activeFile = plugin.app.workspace.getActiveFile();
-            if (activeFile && file.path === activeFile.path) {
+            // Compare against the last known file path — getActiveFile() returns null
+            // when the annotation panel is the active leaf, which would silently miss updates.
+            if (lastFilePathRef.current && file.path === lastFilePathRef.current) {
                 if (refreshTimeout.current) clearTimeout(refreshTimeout.current);
                 refreshTimeout.current = window.setTimeout(refreshAnnotations, 500);
             }
@@ -174,7 +216,7 @@ export const AnnotationPanelComponent: React.FC<Props> = ({ plugin, view }) => {
         message += '\n请综合所有批注，对文章进行修改并写回文件。';
 
         const event = new CustomEvent('voyaru-annotation-revision', {
-            detail: { message, filePath }
+            detail: { message, filePath, model: plugin.settings.annotationRevisionModel || 'follow' }
         });
         (chatLeaf.view as any).contentEl.dispatchEvent(event);
         plugin.app.workspace.revealLeaf(chatLeaf);
@@ -251,6 +293,22 @@ export const AnnotationPanelComponent: React.FC<Props> = ({ plugin, view }) => {
                 <span className="voyaru-annotation-panel-file">{currentFilePath.split('/').pop()}</span>
             </div>
             <div className="voyaru-annotation-panel-actions">
+                <select
+                    className="voyaru-annotation-model-select"
+                    value={annotationModel}
+                    onChange={async (e) => {
+                        const val = e.target.value;
+                        plugin.settings.annotationRevisionModel = val;
+                        await plugin.saveSettings();
+                        setAnnotationModel(val);
+                    }}
+                    title="选择用于批注修改的 AI 模型"
+                >
+                    <option value="follow">跟随主模型 ({getCurrentMainModelName()})</option>
+                    {MODELS.map(m => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                </select>
                 <button
                     className="voyaru-annotation-apply-all-btn"
                     onClick={() => currentFilePath && sendAnnotationRevisionToChat(currentFilePath, annotations)}
