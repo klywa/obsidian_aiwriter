@@ -1,6 +1,12 @@
 import { ViewPlugin, DecorationSet, Decoration, ViewUpdate, EditorView } from '@codemirror/view';
-import { RangeSetBuilder } from '@codemirror/state';
+import { RangeSetBuilder, StateEffect } from '@codemirror/state';
 import { parseAnnotations } from './annotation_parser';
+
+/**
+ * Dispatch this effect on an EditorView to force annotation decorations to rebuild.
+ * Used when vault.modify() may not synchronously trigger docChanged in the CM6 view.
+ */
+export const forceAnnotationRefresh = StateEffect.define<null>();
 
 /**
  * CM6 ViewPlugin that highlights annotated text in the editor.
@@ -16,7 +22,10 @@ export const annotationHighlightPlugin = ViewPlugin.fromClass(
         }
 
         update(update: ViewUpdate) {
-            if (update.docChanged || update.viewportChanged) {
+            const hasForceRefresh = update.transactions.some(
+                tr => tr.effects.some(e => e.is(forceAnnotationRefresh))
+            );
+            if (update.docChanged || update.viewportChanged || hasForceRefresh) {
                 this.decorations = this.buildDecorations(update.view);
             }
         }

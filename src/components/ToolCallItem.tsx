@@ -128,6 +128,20 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
                 if (isRunning || isPending) return `询问用户：${question}`;
                 return `用户决策请求：${question}`;
             }
+            case 'writerReflect': {
+                const filePath = args.filePath || 'file';
+                if (isRunning || isPending) return `正在反思写作经验: ${filePath}...`;
+                if (isFailed) return `写作经验反思失败: ${filePath}`;
+                if (typeof result === 'string') {
+                    if (result.includes('写作指南已更新')) {
+                        return `写作指南已更新 (WRITER.md)`;
+                    }
+                    if (result.includes('未发现')) {
+                        return `本次修改无新经验可提取`;
+                    }
+                }
+                return `写作经验反思完成`;
+            }
             default:
                 return message.tool || 'Unknown operation';
         }

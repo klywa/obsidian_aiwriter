@@ -414,6 +414,40 @@ export class PromptService {
     }
 
     /**
+     * Get reflection system prompt with base prompt substitution
+     */
+    getReflectionSystemPrompt(basePrompt: string): string {
+        if (!this.prompts) {
+            throw new Error('Prompts not loaded');
+        }
+
+        const template = this.getText(this.prompts.reflection.systemPrompt);
+        return this.substituteTemplate(template, { baseSystemPrompt: basePrompt });
+    }
+
+    /**
+     * Get reflection user message with all parameters
+     */
+    getReflectionUserMessage(params: {
+        userInstruction: string;
+        originalContent: string;
+        modifiedContent: string;
+        existingGuidelines: string;
+    }): string {
+        if (!this.prompts) {
+            throw new Error('Prompts not loaded');
+        }
+
+        const template = this.getText(this.prompts.reflection.userMessage);
+        return this.substituteTemplate(template, {
+            userInstruction: params.userInstruction,
+            originalContent: params.originalContent,
+            modifiedContent: params.modifiedContent,
+            existingGuidelines: params.existingGuidelines
+        });
+    }
+
+    /**
      * Get memory mode instruction for injection into main system prompt
      */
     getMemoryModeInstruction(memoryIndex: string): string {

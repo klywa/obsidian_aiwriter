@@ -112,9 +112,20 @@ export const AnnotationPanelComponent: React.FC<Props> = ({ plugin, view }) => {
     useEffect(() => {
         refreshAnnotations();
 
-        const onActiveLeaf = plugin.app.workspace.on('active-leaf-change', () => {
-            refreshAnnotations();
-            setActiveAnnId(null);
+        const onActiveLeaf = plugin.app.workspace.on('active-leaf-change', (leaf) => {
+            // Use the leaf parameter directly to avoid getActiveFile() returning null
+            // when the annotation panel itself briefly becomes the active leaf during transitions.
+            if (leaf && leaf.view instanceof MarkdownView && (leaf.view as MarkdownView).file) {
+                const newFile = (leaf.view as MarkdownView).file!;
+                lastFilePathRef.current = newFile.path;
+                setCurrentFilePath(newFile.path);
+                plugin.app.vault.read(newFile).then(content => {
+                    const { annotations: parsed } = parseAnnotations(content);
+                    setAnnotations(parsed);
+                }).catch(() => setAnnotations([]));
+                setActiveAnnId(null);
+            }
+            // Non-editor leaf (e.g., the annotation panel itself): keep current display
         });
 
         const onFileModify = plugin.app.vault.on('modify', (file) => {
@@ -134,7 +145,7 @@ export const AnnotationPanelComponent: React.FC<Props> = ({ plugin, view }) => {
     }, [refreshAnnotations, plugin]);
 
     const applyAnnotation = async (ann: Annotation) => {
-        const file = plugin.app.workspace.getActiveFile();
+        const file = findTargetFile();
         if (!file) return;
 
         const content = await plugin.app.vault.read(file);
@@ -152,6 +163,7 @@ export const AnnotationPanelComponent: React.FC<Props> = ({ plugin, view }) => {
             const withReplacement = content.replace(ann.target, ann.suggestion);
             const withoutAnnotation = removeAnnotationFromText(withReplacement, ann.id);
             await plugin.app.vault.modify(file, withoutAnnotation);
+            plugin.forceAnnotationDecorationsRefresh(file.path);
             new Notice('批注已应用');
         } else {
             // Global: delegate to AI via chat — show instructions
@@ -160,11 +172,12 @@ export const AnnotationPanelComponent: React.FC<Props> = ({ plugin, view }) => {
     };
 
     const dismissAnnotation = async (ann: Annotation) => {
-        const file = plugin.app.workspace.getActiveFile();
+        const file = findTargetFile();
         if (!file) return;
         const content = await plugin.app.vault.read(file);
         const updated = removeAnnotationFromText(content, ann.id);
         await plugin.app.vault.modify(file, updated);
+        plugin.forceAnnotationDecorationsRefresh(file.path);
         new Notice('批注已删除');
     };
 
@@ -175,7 +188,7 @@ export const AnnotationPanelComponent: React.FC<Props> = ({ plugin, view }) => {
 
     const saveEdit = async () => {
         if (!editingAnn || !editValue.trim()) return;
-        const file = plugin.app.workspace.getActiveFile();
+        const file = findTargetFile();
         if (!file) return;
 
         const content = await plugin.app.vault.read(file);
@@ -185,6 +198,7 @@ export const AnnotationPanelComponent: React.FC<Props> = ({ plugin, view }) => {
         );
         const newContent = writeAnnotationBlock(content, updated);
         await plugin.app.vault.modify(file, newContent);
+        plugin.forceAnnotationDecorationsRefresh(file.path);
         setEditingAnn(null);
         setEditValue('');
     };

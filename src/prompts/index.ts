@@ -27,6 +27,8 @@ import { LOCAL_EDIT_USER_MESSAGE } from './local_edit/user_message';
 import { MEMORY_EXTRACTION_SYSTEM_PROMPT } from './memory/extraction_system';
 import { MEMORY_EXTRACTION_USER_MESSAGE } from './memory/extraction_user_message';
 import { MEMORY_MODE_INSTRUCTION } from './system/memory_mode';
+import { REFLECTION_SYSTEM_PROMPT } from './reflection/system_prompt';
+import { REFLECTION_USER_MESSAGE } from './reflection/user_message';
 import type { PromptsConfig } from './types';
 
 export const DEFAULT_PROMPTS: PromptsConfig = {
@@ -56,5 +58,9 @@ export const DEFAULT_PROMPTS: PromptsConfig = {
         extractionSystemPrompt: MEMORY_EXTRACTION_SYSTEM_PROMPT,
         extractionUserMessage: MEMORY_EXTRACTION_USER_MESSAGE,
         systemInstruction: MEMORY_MODE_INSTRUCTION
+    },
+    reflection: {
+        systemPrompt: REFLECTION_SYSTEM_PROMPT,
+        userMessage: REFLECTION_USER_MESSAGE
     }
 };

@@ -6,7 +6,8 @@ import { FSService } from "./services/fs_service";
 import { PromptService } from "./services/prompt_service";
 import { LocalEditModal } from "./modals/LocalEditModal";
 import { LocalEditStatusModal } from "./modals/LocalEditStatusModal";
-import { getAnnotationExtensions } from "./editor/annotation_decorations";
+import { getAnnotationExtensions, forceAnnotationRefresh } from "./editor/annotation_decorations";
+import { EditorView } from '@codemirror/view';
 import { AnnotationView, VIEW_TYPE_ANNOTATION } from "./views/annotation_view";
 import { AddAnnotationModal } from "./modals/AddAnnotationModal";
 import { addAnnotationToText } from "./editor/annotation_parser";
@@ -212,6 +213,8 @@ export default class VoyaruPlugin extends Plugin {
                                             const updated = addAnnotationToText(content, type, selection, suggestion);
                                             await this.app.vault.modify(vaultFile, updated);
                                             new Notice('批注已添加');
+                                            // Force CM6 highlight extension to rebuild decorations
+                                            this.forceAnnotationDecorationsRefresh(file.path);
                                             // Auto-open annotation panel
                                             await this.activateAnnotationView();
                                         } catch (e: any) {
@@ -550,6 +553,28 @@ export default class VoyaruPlugin extends Plugin {
             await leaf.setViewState({ type: VIEW_TYPE_ANNOTATION, active: true });
         }
         workspace.revealLeaf(leaf);
+    }
+
+    /**
+     * Force the CM6 annotation highlight extension to rebuild decorations on all
+     * open MarkdownView editors. Called after a file is modified with new annotations
+     * since vault.modify() may not synchronously trigger docChanged in the CM6 view.
+     */
+    forceAnnotationDecorationsRefresh(filePath: string) {
+        // Delay slightly to allow the editor to process the vault.modify() update first
+        setTimeout(() => {
+            this.app.workspace.iterateAllLeaves((leaf) => {
+                if (leaf.view instanceof MarkdownView &&
+                    (leaf.view as MarkdownView).file?.path === filePath) {
+                    const cm = ((leaf.view as MarkdownView).editor as any).cm as EditorView | undefined;
+                    if (cm) {
+                        try {
+                            cm.dispatch({ effects: forceAnnotationRefresh.of(null) });
+                        } catch (_) { /* editor may have been closed */ }
+                    }
+                }
+            });
+        }, 150);
     }
 
     async activateView() {
