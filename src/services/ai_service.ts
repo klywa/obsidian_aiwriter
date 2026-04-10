@@ -322,7 +322,8 @@ export class AIService {
     }
 
     private isExtraChapter(filePath: string): boolean {
-        const fileName = filePath.split('/').pop() || filePath.split('\\').pop() || filePath;
+        const normalized = filePath.replace(/\\/g, '/');
+        const fileName = normalized.split('/').pop() ?? filePath;
         return fileName.includes('番外');
     }
 
