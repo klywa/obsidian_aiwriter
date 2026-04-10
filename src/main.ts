@@ -685,6 +685,26 @@ export default class VoyaruPlugin extends Plugin {
 			needsSave = true;
 		}
 
+		// Inject new built-in tools for existing users
+		const builtinToolNames = ['更新记忆'];
+		for (const toolName of builtinToolNames) {
+			const exists = this.settings.tools.some((t: any) => t.name === toolName);
+			if (!exists) {
+				const defaultTool = this.promptService.getDefaultTools().find((t: any) => t.name === toolName);
+				if (defaultTool) {
+					// Insert before "刷新记忆" if present, otherwise append
+					const refreshIdx = this.settings.tools.findIndex((t: any) => t.name === '刷新记忆');
+					if (refreshIdx >= 0) {
+						this.settings.tools.splice(refreshIdx, 0, defaultTool);
+					} else {
+						this.settings.tools.push(defaultTool);
+					}
+					console.log(`[VoyaruPlugin] Injected built-in tool: ${toolName}`);
+					needsSave = true;
+				}
+			}
+		}
+
 		// Migrate post-check items if empty
 		if (!this.settings.postCheckItems || this.settings.postCheckItems.length === 0) {
 			console.log('[VoyaruPlugin] Migrating post-check items from prompts.json');

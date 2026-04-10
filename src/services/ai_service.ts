@@ -1787,8 +1787,9 @@ export class AIService {
                                     }
                                 }
 
-                                // Memory extraction (after PostCheck for chapter files)
-                                if (isChapterFile && shouldPostCheck && this.settings.enableMemory && this.settings.autoMemoryUpdate) {
+                                // Memory extraction (after PostCheck for chapter files, skip delete operations)
+                                const shouldExtract = (operation !== 'delete');
+                                if (isChapterFile && shouldExtract && this.settings.enableMemory && this.settings.autoMemoryUpdate) {
                                     const contentForMemory = finalEditContent || await this.fs.readFile(toolArgs.path);
                                     yield { type: "tool_call_start", tool: "memoryExtract", args: { filePath: toolArgs.path } };
                                     try {
@@ -1807,8 +1808,8 @@ export class AIService {
                                     }
                                 }
 
-                                // Self-evolution reflection for editFile (always a modification)
-                                if (isChapterFile && shouldPostCheck && previousContent !== null && this.settings.enableSelfEvolution) {
+                                // Self-evolution reflection for editFile (skip delete operations)
+                                if (isChapterFile && shouldExtract && previousContent !== null && this.settings.enableSelfEvolution) {
                                     const finalContent = finalEditContent || await this.fs.readFile(toolArgs.path);
                                     yield { type: "tool_call_start", tool: "writerReflect", args: { filePath: toolArgs.path } };
                                     try {
