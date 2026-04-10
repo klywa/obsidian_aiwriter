@@ -321,6 +321,11 @@ export class AIService {
         return filePath.startsWith(chaptersFolder + "/") || filePath.startsWith(chaptersFolder + "\\");
     }
 
+    private isExtraChapter(filePath: string): boolean {
+        const fileName = filePath.split('/').pop() || filePath.split('\\').pop() || filePath;
+        return fileName.includes('番外');
+    }
+
     /**
      * Returns the path of the .plan.md file for a given chapter path.
      * e.g., "Chapters/第一回.md" → "Chapters/第一回.plan.md"
@@ -1549,7 +1554,7 @@ export class AIService {
                                         };
 
                                         // Memory extraction after PostCheck (refined path)
-                                        if (this.settings.enableMemory && this.settings.autoMemoryUpdate) {
+                                        if (this.settings.enableMemory && this.settings.autoMemoryUpdate && !this.isExtraChapter(targetPath)) {
                                             yield { type: "tool_call_start", tool: "memoryExtract", args: { filePath: targetPath } };
                                             try {
                                                 const memResult = await this.performMemoryExtraction(targetPath, finalChapterContent, abortSignal);
@@ -1610,7 +1615,7 @@ export class AIService {
                             }
 
                             // Memory extraction (no-refinement path: PostCheck passed or PostCheck disabled)
-                            if (isChapterFile && this.settings.enableMemory && this.settings.autoMemoryUpdate) {
+                            if (isChapterFile && this.settings.enableMemory && this.settings.autoMemoryUpdate && !this.isExtraChapter(targetPath)) {
                                 yield { type: "tool_call_start", tool: "memoryExtract", args: { filePath: targetPath } };
                                 try {
                                     const memResult = await this.performMemoryExtraction(targetPath, finalChapterContent, abortSignal);
@@ -1789,7 +1794,7 @@ export class AIService {
 
                                 // Memory extraction (after PostCheck for chapter files, skip delete operations)
                                 const shouldExtract = (operation !== 'delete');
-                                if (isChapterFile && shouldExtract && this.settings.enableMemory && this.settings.autoMemoryUpdate) {
+                                if (isChapterFile && shouldExtract && this.settings.enableMemory && this.settings.autoMemoryUpdate && !this.isExtraChapter(toolArgs.path)) {
                                     const contentForMemory = finalEditContent || await this.fs.readFile(toolArgs.path);
                                     yield { type: "tool_call_start", tool: "memoryExtract", args: { filePath: toolArgs.path } };
                                     try {
