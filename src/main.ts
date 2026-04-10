@@ -686,7 +686,7 @@ export default class VoyaruPlugin extends Plugin {
 		}
 
 		// Inject new built-in tools for existing users
-		const builtinToolNames = ['更新记忆'];
+		const builtinToolNames = ['执行规划', '更新记忆'];
 		for (const toolName of builtinToolNames) {
 			const exists = this.settings.tools.some((t: any) => t.name === toolName);
 			if (!exists) {
