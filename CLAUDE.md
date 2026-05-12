@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Working Rules
+
+- **禁止自动提交 Git**：永远不要帮用户执行 `git add`、`git commit`、`git push` 等 Git 操作。用户会自行管理所有 Git 提交。
+
 ## Project Overview
 
 **Voyaru AI Writer** is an Obsidian community plugin that provides AI-powered writing assistance specifically designed for fiction writers. It integrates Google's Gemini AI models to help authors create, manage, and refine creative works within their Obsidian vault.

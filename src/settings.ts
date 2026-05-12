@@ -61,6 +61,7 @@ export interface Message {
         multiSelect: boolean;
         recommendation?: number;
         confirmed: boolean;
+        cancelled?: boolean;
         selectedIndices: number[];
     };
 }
@@ -114,6 +115,10 @@ export interface VoyaruSettings {
     };
     enableMemory: boolean;
     autoMemoryUpdate: boolean;
+    enableSelfEvolution: boolean;
+    memoryExtractionModel: string;    // "follow" | model ID
+    writerReflectionModel: string;    // "follow" | model ID
+    annotationRevisionModel: string;  // "follow" | model ID
     tools: AgentTool[];
     postCheckItems: PostCheckItem[];
     enablePostCheck: boolean;
@@ -189,6 +194,10 @@ export const DEFAULT_SETTINGS: VoyaruSettings = {
     },
     enableMemory: false,
     autoMemoryUpdate: true,
+    enableSelfEvolution: true,
+    memoryExtractionModel: 'follow',
+    writerReflectionModel: 'follow',
+    annotationRevisionModel: 'follow',
     // Tools and postCheckItems are now loaded from prompts.json
     // Will be populated during plugin initialization if empty
     tools: [],
@@ -491,6 +500,57 @@ export class VoyaruSettingTab extends PluginSettingTab {
                         this.plugin.settings.autoMemoryUpdate = value;
                         await this.plugin.saveSettings();
                     }));
+
+            const activeProvider = this.plugin.settings.providers?.find(
+                (p: any) => p.id === this.plugin.settings.activeProviderId
+            );
+            const mainModelId = activeProvider?.selectedModel || 'gemini-3-pro-preview';
+            const mainModelName = MODELS.find(m => m.id === mainModelId)?.name || mainModelId;
+
+            new Setting(containerEl)
+                .setName('记忆归纳模型')
+                .setDesc('用于记忆归纳的 AI 模型。默认跟随主聊天模型。')
+                .addDropdown(dropdown => {
+                    dropdown.addOption('follow', `跟随主模型 (${mainModelName})`);
+                    MODELS.forEach(m => dropdown.addOption(m.id, m.name));
+                    dropdown.setValue(this.plugin.settings.memoryExtractionModel || 'follow');
+                    dropdown.onChange(async (value) => {
+                        this.plugin.settings.memoryExtractionModel = value;
+                        await this.plugin.saveSettings();
+                    });
+                });
+        }
+
+        new Setting(containerEl)
+            .setName('启用自我进化')
+            .setDesc('AI 修改章节后自动反思本次修改，提炼写作经验和用户偏好，写入 vault 根目录的 WRITER.md（仅在修改已有章节时触发，首次创作不触发）。')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableSelfEvolution ?? true)
+                .onChange(async (value) => {
+                    this.plugin.settings.enableSelfEvolution = value;
+                    await this.plugin.saveSettings();
+                    this.display(); // re-render to show/hide the model dropdown
+                }));
+
+        if (this.plugin.settings.enableSelfEvolution) {
+            const activeProvider2 = this.plugin.settings.providers?.find(
+                (p: any) => p.id === this.plugin.settings.activeProviderId
+            );
+            const mainModelId2 = activeProvider2?.selectedModel || 'gemini-3-pro-preview';
+            const mainModelName2 = MODELS.find(m => m.id === mainModelId2)?.name || mainModelId2;
+
+            new Setting(containerEl)
+                .setName('自进化模型')
+                .setDesc('用于写作经验反思（自进化）的 AI 模型。默认跟随主聊天模型。')
+                .addDropdown(dropdown => {
+                    dropdown.addOption('follow', `跟随主模型 (${mainModelName2})`);
+                    MODELS.forEach(m => dropdown.addOption(m.id, m.name));
+                    dropdown.setValue(this.plugin.settings.writerReflectionModel || 'follow');
+                    dropdown.onChange(async (value) => {
+                        this.plugin.settings.writerReflectionModel = value;
+                        await this.plugin.saveSettings();
+                    });
+                });
         }
 
         containerEl.createEl('h3', { text: 'UI Configuration' });

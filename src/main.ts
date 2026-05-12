@@ -6,7 +6,8 @@ import { FSService } from "./services/fs_service";
 import { PromptService } from "./services/prompt_service";
 import { LocalEditModal } from "./modals/LocalEditModal";
 import { LocalEditStatusModal } from "./modals/LocalEditStatusModal";
-import { getAnnotationExtensions } from "./editor/annotation_decorations";
+import { getAnnotationExtensions, forceAnnotationRefresh } from "./editor/annotation_decorations";
+import { EditorView } from '@codemirror/view';
 import { AnnotationView, VIEW_TYPE_ANNOTATION } from "./views/annotation_view";
 import { AddAnnotationModal } from "./modals/AddAnnotationModal";
 import { addAnnotationToText } from "./editor/annotation_parser";
@@ -18,6 +19,8 @@ export default class VoyaruPlugin extends Plugin {
     promptService: PromptService;
     localEditStatusModal: LocalEditStatusModal | null = null;
     private localEditAbortController: AbortController | null = null;
+    // 防止 saveSettings 写入 data.json 后触发自身的 vault modify 事件重新加载
+    private _isSavingSettings: boolean = false;
 
     // Cached waiting messages from chapters (legacy, kept for compatibility)
     private cachedChapterSentences: string[] = [];
@@ -245,19 +248,15 @@ export default class VoyaruPlugin extends Plugin {
 		this.addSettingTab(new VoyaruSettingTab(this.app, this));
 
         // 监听配置文件变化（用于多端同步）
+        // 注意：跳过本插件自身写入触发的事件，避免保存→事件→重载的死循环
         this.registerEvent(this.app.vault.on('modify', async (file) => {
             if (file.path === `${this.manifest.dir}/data.json`) {
+                if (this._isSavingSettings) return;
                 console.log('Detected configuration change from file system (sync), reloading settings...');
                 await this.loadSettings();
-                
-                // 如果AI服务已初始化，更新其配置
                 if (this.aiService) {
                     this.aiService.updateSettings(this.settings);
                 }
-                
-                // 通知UI更新（如果有必要）
-                // 目前UI主要通过props或自行读取plugin.settings，
-                // 对于React组件，可能需要一种机制来通知更新，但主要配置如API Key等会立即生效。
             }
         }));
 	}
@@ -549,6 +548,28 @@ export default class VoyaruPlugin extends Plugin {
         workspace.revealLeaf(leaf);
     }
 
+    /**
+     * Force the CM6 annotation highlight extension to rebuild decorations on all
+     * open MarkdownView editors. Called after a file is modified with new annotations
+     * since vault.modify() may not synchronously trigger docChanged in the CM6 view.
+     */
+    forceAnnotationDecorationsRefresh(filePath: string) {
+        // Delay slightly to allow the editor to process the vault.modify() update first
+        setTimeout(() => {
+            this.app.workspace.iterateAllLeaves((leaf) => {
+                if (leaf.view instanceof MarkdownView &&
+                    (leaf.view as MarkdownView).file?.path === filePath) {
+                    const cm = ((leaf.view as MarkdownView).editor as any).cm as EditorView | undefined;
+                    if (cm) {
+                        try {
+                            cm.dispatch({ effects: forceAnnotationRefresh.of(null) });
+                        } catch (_) { /* editor may have been closed */ }
+                    }
+                }
+            });
+        }, 150);
+    }
+
     async activateView() {
         const { workspace } = this.app;
 
@@ -657,6 +678,26 @@ export default class VoyaruPlugin extends Plugin {
 			needsSave = true;
 		}
 
+		// Inject new built-in tools for existing users
+		const builtinToolNames = ['执行规划', '更新记忆'];
+		for (const toolName of builtinToolNames) {
+			const exists = this.settings.tools.some((t: any) => t.name === toolName);
+			if (!exists) {
+				const defaultTool = this.promptService.getDefaultTools().find((t: any) => t.name === toolName);
+				if (defaultTool) {
+					// Insert before "刷新记忆" if present, otherwise append
+					const refreshIdx = this.settings.tools.findIndex((t: any) => t.name === '刷新记忆');
+					if (refreshIdx >= 0) {
+						this.settings.tools.splice(refreshIdx, 0, defaultTool);
+					} else {
+						this.settings.tools.push(defaultTool);
+					}
+					console.log(`[VoyaruPlugin] Injected built-in tool: ${toolName}`);
+					needsSave = true;
+				}
+			}
+		}
+
 		// Migrate post-check items if empty
 		if (!this.settings.postCheckItems || this.settings.postCheckItems.length === 0) {
 			console.log('[VoyaruPlugin] Migrating post-check items from prompts.json');
@@ -687,9 +728,13 @@ export default class VoyaruPlugin extends Plugin {
 	}
 
 	async saveSettings() {
-		await this.saveData(this.settings);
+        this._isSavingSettings = true;
+        try {
+            await this.saveData(this.settings);
+        } finally {
+            this._isSavingSettings = false;
+        }
         if (this.aiService) {
-            // 更新 AI Service 设置（会触发适配器重新初始化）
             await this.aiService.updateSettings(this.settings);
         } else {
             console.warn('AI Service not initialized when saving settings');

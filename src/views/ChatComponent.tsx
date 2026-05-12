@@ -62,6 +62,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const [planModeActive, setPlanModeActive] = useState<boolean>(plugin.settings.enablePlanMode);
     const skipPlanModeOnceRef = useRef<boolean>(false);
     const annotationModeOnceRef = useRef<boolean>(false);
+    const overrideModelOnceRef = useRef<string | null>(null);
 
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -330,16 +331,27 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         };
     }, [messages, currentSessionId]);
 
-    // 同步chatHistory到session
+    // 同步chatHistory到session（防抖，避免流式响应期间频繁触发保存链）
+    const syncChatHistoryRef = useRef<NodeJS.Timeout | null>(null);
     useEffect(() => {
         if (currentSessionId && chatHistory.length >= 0) {
-            setSessions(prev => prev.map(s => {
-                if (s.id === currentSessionId) {
-                    return { ...s, chatHistory: chatHistory };
-                }
-                return s;
-            }));
+            if (syncChatHistoryRef.current) {
+                clearTimeout(syncChatHistoryRef.current);
+            }
+            syncChatHistoryRef.current = setTimeout(() => {
+                setSessions(prev => prev.map(s => {
+                    if (s.id === currentSessionId) {
+                        return { ...s, chatHistory: chatHistory };
+                    }
+                    return s;
+                }));
+            }, 500);
         }
+        return () => {
+            if (syncChatHistoryRef.current) {
+                clearTimeout(syncChatHistoryRef.current);
+            }
+        };
     }, [chatHistory, currentSessionId]);
 
     // 自动折叠超过对话窗口一半高度的用户query
@@ -1173,9 +1185,12 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             skipPlanModeOnceRef.current = false;
             const annotationMode = annotationModeOnceRef.current;
             annotationModeOnceRef.current = false;
-            const streamOptions = (skipPlanMode || annotationMode)
-                ? { ...(skipPlanMode ? { skipPlanMode: true } : {}), ...(annotationMode ? { annotationMode: true } : {}) }
-                : undefined;
+            const modelOverride = overrideModelOnceRef.current;
+            overrideModelOnceRef.current = null;
+            const streamOptions: { skipPlanMode?: boolean; annotationMode?: boolean; modelOverride?: string } = {};
+            if (skipPlanMode) streamOptions.skipPlanMode = true;
+            if (annotationMode) streamOptions.annotationMode = true;
+            if (modelOverride) streamOptions.modelOverride = modelOverride;
             const stream = plugin.aiService.streamChat(currentSessionId, historyForRequest, messageContent, newUserMsg.referencedFiles, abortControllerRef.current.signal, undefined, streamOptions);
 
             let currentResponseId = `msg-${Date.now()}-response`;
@@ -1601,11 +1616,14 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     useEffect(() => {
         if (!containerEl) return;
         const handler = (e: CustomEvent) => {
-            const { message, filePath } = e.detail as { message: string; filePath: string };
+            const { message, filePath, model } = e.detail as { message: string; filePath: string; model?: string };
             // Annotation revision always bypasses plan mode — user wants direct modification
             skipPlanModeOnceRef.current = true;
             // Inject annotation mode system instruction (forces readFile of setting files before writeFile)
             annotationModeOnceRef.current = true;
+            if (model && model !== 'follow') {
+                overrideModelOnceRef.current = model;
+            }
             handleSendMessage(message, [filePath]);
         };
         containerEl.addEventListener('voyaru-annotation-revision', handler as EventListener);
@@ -2117,6 +2135,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                     multiSelect={m.askUserData.multiSelect}
                     recommendation={m.askUserData.recommendation}
                     isConfirmed={m.askUserData.confirmed}
+                    isCancelled={m.askUserData.cancelled}
                     confirmedSelections={m.askUserData.selectedIndices}
                     onConfirm={(selectedIndices) => {
                         // Mark as confirmed in state
@@ -2131,6 +2150,14 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                             ? `[User Decision] Question: "${m.askUserData!.question}"\nSelected: [${selectedLabels.map(l => `"${l}"`).join(', ')}]`
                             : `[User Decision] Question: "${m.askUserData!.question}"\nSelected: "${selectedLabels[0]}"`;
                         handleSendMessage(selectionText);
+                    }}
+                    onCancel={() => {
+                        // Mark as cancelled in state (no message sent to AI)
+                        setMessages(prev => prev.map(msg =>
+                            msg.id === m.id
+                                ? { ...msg, askUserData: { ...msg.askUserData!, cancelled: true } }
+                                : msg
+                        ));
                     }}
                 />
             );

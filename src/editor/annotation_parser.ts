@@ -26,6 +26,26 @@ export interface ParsedAnnotations {
 const BLOCK_START_MARKER = '%%voyaru-annotations';
 const BLOCK_END_MARKER = '%%';
 
+/** Escape newlines and backslashes so a value fits on a single annotation line. */
+function escapeField(value: string): string {
+    return value.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+}
+
+/** Reverse escapeField. */
+function unescapeField(value: string): string {
+    let result = '';
+    for (let i = 0; i < value.length; i++) {
+        if (value[i] === '\\' && i + 1 < value.length) {
+            const next = value[i + 1];
+            if (next === 'n') { result += '\n'; i++; continue; }
+            if (next === 'r') { result += '\r'; i++; continue; }
+            if (next === '\\') { result += '\\'; i++; continue; }
+        }
+        result += value[i];
+    }
+    return result;
+}
+
 /**
  * Parse all annotations from document text.
  * Returns empty result if no annotation block is found.
@@ -94,8 +114,8 @@ export function parseAnnotations(docText: string): ParsedAnnotations {
 
             const id = fields['id'] || `ann-${Date.now()}-${lineIndex}`;
             const type = fields['type'] === 'global' ? 'global' : 'local';
-            const target = fields['target'] || '';
-            const suggestion = suggestionParts.join('|');
+            const target = unescapeField(fields['target'] || '');
+            const suggestion = unescapeField(suggestionParts.join('|'));
 
             if (suggestion) {
                 annotations.push({ id, type, target, suggestion, lineIndex });
@@ -117,10 +137,11 @@ export function parseAnnotations(docText: string): ParsedAnnotations {
 }
 
 /**
- * Serialize a single annotation to a line in the block.
+ * Serialize a single annotation to a single line in the block.
+ * Newlines in target/suggestion are escaped so each annotation fits on one line.
  */
 export function serializeAnnotation(ann: Annotation): string {
-    return `@ann|id:${ann.id}|type:${ann.type}|target:${ann.target}|${ann.suggestion}`;
+    return `@ann|id:${ann.id}|type:${ann.type}|target:${escapeField(ann.target)}|${escapeField(ann.suggestion)}`;
 }
 
 /**

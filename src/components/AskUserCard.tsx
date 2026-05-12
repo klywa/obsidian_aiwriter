@@ -14,8 +14,10 @@ interface AskUserCardProps {
     multiSelect: boolean;
     recommendation?: number;
     isConfirmed: boolean;
+    isCancelled?: boolean;
     confirmedSelections?: number[];
     onConfirm: (selectedIndices: number[]) => void;
+    onCancel: () => void;
 }
 
 export const AskUserCard: React.FC<AskUserCardProps> = ({
@@ -25,8 +27,10 @@ export const AskUserCard: React.FC<AskUserCardProps> = ({
     multiSelect,
     recommendation,
     isConfirmed,
+    isCancelled = false,
     confirmedSelections = [],
-    onConfirm
+    onConfirm,
+    onCancel
 }) => {
     const [selectedIndices, setSelectedIndices] = useState<number[]>(
         isConfirmed ? confirmedSelections : []
@@ -46,18 +50,24 @@ export const AskUserCard: React.FC<AskUserCardProps> = ({
     };
 
     const handleConfirm = () => {
-        if (selectedIndices.length === 0 || isConfirmed) return;
+        if (selectedIndices.length === 0 || isConfirmed || isCancelled) return;
         onConfirm(selectedIndices);
     };
 
+    const handleCancel = () => {
+        if (isConfirmed || isCancelled) return;
+        onCancel();
+    };
+
     const displaySelections = isConfirmed ? confirmedSelections : selectedIndices;
+    const isDone = isConfirmed || isCancelled;
 
     return (
-        <div className={`voyaru-ask-user-card${isConfirmed ? ' voyaru-ask-user-card--confirmed' : ''}`}>
+        <div className={`voyaru-ask-user-card${isDone ? ' voyaru-ask-user-card--confirmed' : ''}`}>
             <div className="voyaru-ask-user-card-header">
                 <span className="voyaru-ask-user-card-icon"><SparklesIcon size={14} /></span>
                 <span className="voyaru-ask-user-card-title">
-                    {isConfirmed ? '已做出选择' : (multiSelect ? '请选择（可多选）' : '请选择')}
+                    {isCancelled ? '已取消' : isConfirmed ? '已做出选择' : (multiSelect ? '请选择（可多选）' : '请选择')}
                 </span>
             </div>
 
@@ -79,7 +89,7 @@ export const AskUserCard: React.FC<AskUserCardProps> = ({
                                 'voyaru-ask-user-option',
                                 isSelected ? 'voyaru-ask-user-option--selected' : '',
                                 isRecommended ? 'voyaru-ask-user-option--recommended' : '',
-                                isConfirmed ? 'voyaru-ask-user-option--readonly' : ''
+                                isDone ? 'voyaru-ask-user-option--readonly' : ''
                             ].filter(Boolean).join(' ')}
                             onClick={() => handleToggle(index)}
                         >
@@ -88,7 +98,7 @@ export const AskUserCard: React.FC<AskUserCardProps> = ({
                                     {isSelected && <CheckIcon size={10} />}
                                 </span>
                                 <span className="voyaru-ask-user-option-label">{option.label}</span>
-                                {isRecommended && !isConfirmed && (
+                                {isRecommended && !isDone && (
                                     <span className="voyaru-ask-user-option-recommended-badge">推荐</span>
                                 )}
                             </div>
@@ -108,19 +118,29 @@ export const AskUserCard: React.FC<AskUserCardProps> = ({
             </div>
 
             <div className="voyaru-ask-user-card-actions">
-                {isConfirmed ? (
+                {isCancelled ? (
+                    <span className="voyaru-ask-user-confirmed-label">已取消</span>
+                ) : isConfirmed ? (
                     <span className="voyaru-ask-user-confirmed-label">
                         <CheckIcon size={12} />
                         已选择：{confirmedSelections.map(i => options[i]?.label).join('、')}
                     </span>
                 ) : (
-                    <button
-                        className="voyaru-ask-user-confirm-btn"
-                        onClick={handleConfirm}
-                        disabled={selectedIndices.length === 0}
-                    >
-                        <CheckIcon size={12} /> 确认选择
-                    </button>
+                    <>
+                        <button
+                            className="voyaru-ask-user-confirm-btn"
+                            onClick={handleConfirm}
+                            disabled={selectedIndices.length === 0}
+                        >
+                            <CheckIcon size={12} /> 确认选择
+                        </button>
+                        <button
+                            className="voyaru-ask-user-cancel-btn"
+                            onClick={handleCancel}
+                        >
+                            取消
+                        </button>
+                    </>
                 )}
             </div>
         </div>

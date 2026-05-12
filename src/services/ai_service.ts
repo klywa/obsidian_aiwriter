@@ -73,7 +73,15 @@ export class AIService {
         // 优先使用provider的selectedModel，其次使用旧字段model，最后使用默认值
         return provider?.selectedModel || this.settings.model || 'gemini-2.0-flash';
     }
-    
+
+    private getModelForFeature(feature: 'memory' | 'reflection'): string {
+        const value: string = feature === 'memory'
+            ? this.settings.memoryExtractionModel
+            : this.settings.writerReflectionModel;
+        if (!value || value === 'follow') return this.getCurrentModel();
+        return value;
+    }
+
     async updateSettings(settings: VoyaruSettings) {
         const oldProviderId = this.settings.activeProviderId;
         const oldProvider = this.getActiveProvider();
@@ -356,6 +364,12 @@ export class AIService {
         return filePath.startsWith(chaptersFolder + "/") || filePath.startsWith(chaptersFolder + "\\");
     }
 
+    private isExtraChapter(filePath: string): boolean {
+        const normalized = filePath.replace(/\\/g, '/');
+        const fileName = normalized.split('/').pop() ?? filePath;
+        return fileName.includes('番外');
+    }
+
     /**
      * Returns the path of the .plan.md file for a given chapter path.
      * e.g., "Chapters/第一回.md" → "Chapters/第一回.plan.md"
@@ -604,7 +618,7 @@ export class AIService {
 
         // Create temp session
         const chat = this.genAI.chats.create({
-            model: this.getCurrentModel(),
+            model: this.getModelForFeature('memory'),
             config: {
                 systemInstruction: extractionSystemPrompt,
                 tools: [],
@@ -731,6 +745,102 @@ export class AIService {
         }
     }
 
+    /**
+     * Auto-section markers used in WRITER.md for AI-managed guidelines.
+     */
+    private static readonly WRITER_AUTO_START = '<!-- voyaru-auto-guidelines-start -->';
+    private static readonly WRITER_AUTO_END = '<!-- voyaru-auto-guidelines-end -->';
+
+    /**
+     * Reflect on a chapter modification to extract writing lessons and update WRITER.md auto section.
+     * Only called for modifications (previousContent !== null), not for new file creation.
+     */
+    private async performWriterMdReflection(
+        originalContent: string,
+        modifiedContent: string,
+        userInstruction: string,
+        abortSignal?: AbortSignal
+    ): Promise<{ updated: boolean } | null> {
+        if (!this.genAI) {
+            throw new Error('AI client not initialized');
+        }
+
+        console.log('[Reflection] Starting writer reflection');
+
+        // Read existing WRITER.md and extract auto section
+        const writerMdContent = await this.readWriterMd();
+        let existingGuidelines = '';
+        if (writerMdContent) {
+            const startIdx = writerMdContent.indexOf(AIService.WRITER_AUTO_START);
+            const endIdx = writerMdContent.indexOf(AIService.WRITER_AUTO_END);
+            if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+                existingGuidelines = writerMdContent
+                    .slice(startIdx + AIService.WRITER_AUTO_START.length, endIdx)
+                    .trim();
+            }
+        }
+
+        // Build prompts
+        const basePrompt = this.getProcessedSystemPrompt();
+        const systemPrompt = this.promptService.getReflectionSystemPrompt(basePrompt);
+        const userMessage = this.promptService.getReflectionUserMessage({
+            userInstruction,
+            originalContent,
+            modifiedContent,
+            existingGuidelines: existingGuidelines || '（暂无）'
+        });
+
+        // Create isolated chat session for reflection
+        const reflectionChat = this.genAI.chats.create({
+            model: this.getModelForFeature('reflection'),
+            config: {
+                systemInstruction: systemPrompt,
+                tools: [],
+            },
+            history: []
+        });
+
+        let newAutoContent = '';
+        const stream = await reflectionChat.sendMessageStream({ message: userMessage });
+        for await (const chunk of stream) {
+            if (abortSignal?.aborted) break;
+            const text = chunk.text;
+            if (text) newAutoContent += text;
+        }
+        newAutoContent = newAutoContent.trim();
+
+        if (!newAutoContent) {
+            console.log('[Reflection] No guidelines generated');
+            return { updated: false };
+        }
+
+        // Build new WRITER.md content: preserve user section, replace auto section
+        const autoBlock = `${AIService.WRITER_AUTO_START}\n${newAutoContent}\n${AIService.WRITER_AUTO_END}`;
+
+        let newWriterMd: string;
+        if (writerMdContent) {
+            const startIdx = writerMdContent.indexOf(AIService.WRITER_AUTO_START);
+            const endIdx = writerMdContent.indexOf(AIService.WRITER_AUTO_END);
+            if (startIdx !== -1 && endIdx !== -1) {
+                // Replace existing auto section
+                newWriterMd =
+                    writerMdContent.slice(0, startIdx) +
+                    autoBlock +
+                    writerMdContent.slice(endIdx + AIService.WRITER_AUTO_END.length);
+            } else {
+                // No markers found — append auto section
+                newWriterMd = writerMdContent.trimEnd() + '\n\n' + autoBlock + '\n';
+            }
+        } else {
+            // WRITER.md doesn't exist yet — create with auto section only
+            newWriterMd = autoBlock + '\n';
+        }
+
+        await this.fs.writeFile('WRITER.md', newWriterMd);
+        console.log('[Reflection] WRITER.md updated');
+        return { updated: true };
+    }
+
     private extractCheckResult(response: string): string {
         // 提取【检查结果】部分
         const checkResultMatch = response.match(/【检查结果】\s*([\s\S]*?)(?:【润色后内容】|$)/);
@@ -825,7 +935,7 @@ export class AIService {
         return fallback;
     }
 
-    async *streamChat(sessionId: string, history: Content[], newMessage: string, referencedFiles: string[] = [], abortSignal?: AbortSignal, systemInstructionOverride?: string, options?: { skipPlanMode?: boolean; annotationMode?: boolean }): AsyncGenerator<any, void, unknown> {
+    async *streamChat(sessionId: string, history: Content[], newMessage: string, referencedFiles: string[] = [], abortSignal?: AbortSignal, systemInstructionOverride?: string, options?: { skipPlanMode?: boolean; annotationMode?: boolean; modelOverride?: string }): AsyncGenerator<any, void, unknown> {
         try {
         // 检查API Key（使用provider而不是旧的settings.apiKey）
         const provider = this.getActiveProvider();
@@ -940,10 +1050,16 @@ export class AIService {
             },
         ];
            
+        const currentModel = options?.modelOverride || this.getCurrentModel();
+        if (options?.modelOverride) {
+            console.log('[AIService] streamChat using model override:', options.modelOverride);
+        }
+
         let chat;
 
         // Check if we can reuse an existing chat session (Server Mode)
-        if (this.settings.contextMode === 'server' && sessionId && this.activeChats.has(sessionId)) {
+        // Skip cache when modelOverride is active so the correct model is used
+        if (this.settings.contextMode === 'server' && sessionId && this.activeChats.has(sessionId) && !options?.modelOverride) {
              chat = this.activeChats.get(sessionId);
              console.log(`🔄 [Server Mode] Reusing existing chat for session: ${sessionId}`);
         } else {
@@ -1044,7 +1160,7 @@ export class AIService {
 
         // Create chat using new SDK
             chat = this.genAI.chats.create({
-            model: this.getCurrentModel(),
+            model: currentModel,
             config: {
                     systemInstruction: fullSystemPrompt,
                 tools: tools,
@@ -1052,7 +1168,7 @@ export class AIService {
             history: cleanHistory
         });
 
-            if (this.settings.contextMode === 'server' && sessionId) {
+            if (this.settings.contextMode === 'server' && sessionId && !options?.modelOverride) {
                  this.activeChats.set(sessionId, chat);
                  console.log(`💾 [Server Mode] Saved chat to activeChats for session: ${sessionId}`);
             }
@@ -1073,7 +1189,7 @@ export class AIService {
         };
 
         // Check for large prompt that may trigger empty response bug in gemini-3-pro-preview
-        const currentModel = this.getCurrentModel();
+        // currentModel was already computed above (with modelOverride applied)
         const estimatedTokens = this.estimateTokenCount(fullSystemPrompt) +
                                this.estimateTokenCount(typeof msgToSend === 'string' ? msgToSend : JSON.stringify(msgToSend));
 
@@ -1331,6 +1447,13 @@ export class AIService {
                  let stopAfterProposePlan = false;
                 let stopAfterAskUser = false;
 
+                // 将 askUser / proposePlan 移到末尾处理，确保 writeFile/editFile
+                // 及其内联的记忆提取在 generator 停止前全部完成。
+                functionCalls.sort((a, b) => {
+                    const stopTools = ['askUser', 'proposePlan'];
+                    return (stopTools.includes(a.name) ? 1 : 0) - (stopTools.includes(b.name) ? 1 : 0);
+                });
+
                  for (const call of functionCalls) {
                      const { name, args, thoughtSignature } = call;
                      // New SDK args might be object directly? Yes.
@@ -1479,7 +1602,7 @@ export class AIService {
                                         };
 
                                         // Memory extraction after PostCheck (refined path)
-                                        if (this.settings.enableMemory && this.settings.autoMemoryUpdate) {
+                                        if (this.settings.enableMemory && this.settings.autoMemoryUpdate && !this.isExtraChapter(targetPath)) {
                                             yield { type: "tool_call_start", tool: "memoryExtract", args: { filePath: targetPath } };
                                             try {
                                                 const memResult = await this.performMemoryExtraction(targetPath, finalChapterContent, abortSignal);
@@ -1494,6 +1617,17 @@ export class AIService {
                                                 };
                                             } catch (memErr: any) {
                                                 yield { type: "tool_result", tool: "memoryExtract", args: { filePath: targetPath }, result: `记忆提取失败：${memErr.message}`, error: true };
+                                            }
+                                        }
+
+                                        // Self-evolution reflection (only for modifications, not new files)
+                                        if (isChapterFile && previousContent !== null && this.settings.enableSelfEvolution) {
+                                            yield { type: "tool_call_start", tool: "writerReflect", args: { filePath: targetPath } };
+                                            try {
+                                                const reflectResult = await this.performWriterMdReflection(previousContent, finalChapterContent, newMessage, abortSignal);
+                                                yield { type: "tool_result", tool: "writerReflect", args: { filePath: targetPath }, result: reflectResult?.updated ? '写作指南已更新。' : '未发现需要更新的经验。' };
+                                            } catch (reflectErr: any) {
+                                                yield { type: "tool_result", tool: "writerReflect", args: { filePath: targetPath }, result: `反思失败：${reflectErr.message}`, error: true };
                                             }
                                         }
 
@@ -1529,7 +1663,7 @@ export class AIService {
                             }
 
                             // Memory extraction (no-refinement path: PostCheck passed or PostCheck disabled)
-                            if (isChapterFile && this.settings.enableMemory && this.settings.autoMemoryUpdate) {
+                            if (isChapterFile && this.settings.enableMemory && this.settings.autoMemoryUpdate && !this.isExtraChapter(targetPath)) {
                                 yield { type: "tool_call_start", tool: "memoryExtract", args: { filePath: targetPath } };
                                 try {
                                     const memResult = await this.performMemoryExtraction(targetPath, finalChapterContent, abortSignal);
@@ -1544,6 +1678,17 @@ export class AIService {
                                     };
                                 } catch (memErr: any) {
                                     yield { type: "tool_result", tool: "memoryExtract", args: { filePath: targetPath }, result: `记忆提取失败：${memErr.message}`, error: true };
+                                }
+                            }
+
+                            // Self-evolution reflection (only for modifications, not new files)
+                            if (isChapterFile && previousContent !== null && this.settings.enableSelfEvolution) {
+                                yield { type: "tool_call_start", tool: "writerReflect", args: { filePath: targetPath } };
+                                try {
+                                    const reflectResult = await this.performWriterMdReflection(previousContent, finalChapterContent, newMessage, abortSignal);
+                                    yield { type: "tool_result", tool: "writerReflect", args: { filePath: targetPath }, result: reflectResult?.updated ? '写作指南已更新。' : '未发现需要更新的经验。' };
+                                } catch (reflectErr: any) {
+                                    yield { type: "tool_result", tool: "writerReflect", args: { filePath: targetPath }, result: `反思失败：${reflectErr.message}`, error: true };
                                 }
                             }
 
@@ -1695,8 +1840,9 @@ export class AIService {
                                     }
                                 }
 
-                                // Memory extraction (after PostCheck for chapter files)
-                                if (isChapterFile && shouldPostCheck && this.settings.enableMemory && this.settings.autoMemoryUpdate) {
+                                // Memory extraction (after PostCheck for chapter files, skip delete operations)
+                                const shouldExtract = (operation !== 'delete');
+                                if (isChapterFile && shouldExtract && this.settings.enableMemory && this.settings.autoMemoryUpdate && !this.isExtraChapter(toolArgs.path)) {
                                     const contentForMemory = finalEditContent || await this.fs.readFile(toolArgs.path);
                                     yield { type: "tool_call_start", tool: "memoryExtract", args: { filePath: toolArgs.path } };
                                     try {
@@ -1712,6 +1858,18 @@ export class AIService {
                                         };
                                     } catch (memErr: any) {
                                         yield { type: "tool_result", tool: "memoryExtract", args: { filePath: toolArgs.path }, result: `记忆提取失败：${memErr.message}`, error: true };
+                                    }
+                                }
+
+                                // Self-evolution reflection for editFile (skip delete operations)
+                                if (isChapterFile && shouldExtract && previousContent !== null && this.settings.enableSelfEvolution) {
+                                    const finalContent = finalEditContent || await this.fs.readFile(toolArgs.path);
+                                    yield { type: "tool_call_start", tool: "writerReflect", args: { filePath: toolArgs.path } };
+                                    try {
+                                        const reflectResult = await this.performWriterMdReflection(previousContent, finalContent, newMessage, abortSignal);
+                                        yield { type: "tool_result", tool: "writerReflect", args: { filePath: toolArgs.path }, result: reflectResult?.updated ? '写作指南已更新。' : '未发现需要更新的经验。' };
+                                    } catch (reflectErr: any) {
+                                        yield { type: "tool_result", tool: "writerReflect", args: { filePath: toolArgs.path }, result: `反思失败：${reflectErr.message}`, error: true };
                                     }
                                 }
 
@@ -1772,6 +1930,9 @@ export class AIService {
 
                  // Check if we're using SDK's ChatSession (should auto-handle signatures)
                  console.log(`[AIService] Using SDK ChatSession for function response - SDK should handle signature preservation automatically`);
+
+                 // 注意：writeFile/editFile（含内联记忆提取）已在上方 for 循环中全部完成，
+                 // 因为 askUser/proposePlan 被排序到了末尾。
 
                  // If proposePlan was called, send the tool response to keep chat history consistent,
                  // then STOP the loop. The AI must not continue until the user confirms via [Plan Confirmed].

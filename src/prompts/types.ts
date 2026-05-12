@@ -81,4 +81,8 @@ export interface PromptsConfig {
         extractionUserMessage: TemplateConfig;
         systemInstruction: TemplateConfig;
     };
+    reflection: {
+        systemPrompt: TemplateConfig;
+        userMessage: TemplateConfig;
+    };
 }
