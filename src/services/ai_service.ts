@@ -155,15 +155,58 @@ export class AIService {
     }
 
     /**
-     * 获取完整的 system prompt（包含 WRITER.md 内容）
+     * 在配置的 knowledge / notes 文件夹及 vault 根目录下查找风格指南文件
+     * @returns 风格指南文件的 vault 相对路径；未找到时返回 null
+     */
+    async findStyleGuide(): Promise<string | null> {
+        const folders = this.settings.folders;
+        const candidates: string[] = [];
+        const fileNames = ['风格指南.md', 'StyleGuide.md', 'style_guide.md'];
+        for (const folderKey of ['knowledge', 'notes'] as const) {
+            const folderPath = folders?.[folderKey];
+            if (folderPath) {
+                for (const fileName of fileNames) {
+                    candidates.push(`${folderPath}/${fileName}`);
+                }
+            }
+        }
+        for (const fileName of fileNames) {
+            candidates.push(fileName);
+        }
+        for (const path of candidates) {
+            try {
+                const content = await this.fs.readFile(path);
+                if (content && content.trim().length > 0) {
+                    console.log(`[AIService] Found style guide at ${path}`);
+                    return path;
+                }
+            } catch {
+                // ignore
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 获取完整的 system prompt（包含 WRITER.md 内容 + 风格指南强制读取指令）
      */
     async getFullSystemPrompt(): Promise<string> {
         let prompt = this.getProcessedSystemPrompt();
 
-        // 读取 WRITER.md 并直接拼入系统 prompt
+        // 读取 WRITER.md 并直接拼入系统 prompt（强制要求遵守）
         const writerMd = await this.readWriterMd();
         if (writerMd) {
-            prompt += '\n\n---\n\n## WRITER.md（用户写作指南）\n\n' + writerMd;
+            prompt += '\n\n---\n\n## WRITER.md（用户写作指南 — 强制遵守）\n\n**强制要求**：以下是项目的用户写作指南，已在系统提示词中完整提供。**所有创作 / 修改任务都必须严格遵守其中的每一条要求**，不得跳过、忽略或仅参考。\n\n' + writerMd;
+        }
+
+        // 查找风格指南文件并注入强制读取指令（如存在）
+        try {
+            const styleGuidePath = await this.findStyleGuide();
+            if (styleGuidePath) {
+                prompt += '\n\n' + this.promptService.getStyleGuideInstruction(styleGuidePath);
+            }
+        } catch (e) {
+            console.warn('[AIService] Failed to inject style guide instruction:', e);
         }
 
         // 注入记忆系统索引（在 WRITER.md 之后、文件树之前）
@@ -782,7 +825,7 @@ export class AIService {
         return fallback;
     }
 
-    async *streamChat(sessionId: string, history: Content[], newMessage: string, referencedFiles: string[] = [], abortSignal?: AbortSignal, systemInstructionOverride?: string, options?: { skipPlanMode?: boolean }): AsyncGenerator<any, void, unknown> {
+    async *streamChat(sessionId: string, history: Content[], newMessage: string, referencedFiles: string[] = [], abortSignal?: AbortSignal, systemInstructionOverride?: string, options?: { skipPlanMode?: boolean; annotationMode?: boolean }): AsyncGenerator<any, void, unknown> {
         try {
         // 检查API Key（使用provider而不是旧的settings.apiKey）
         const provider = this.getActiveProvider();
@@ -813,6 +856,10 @@ export class AIService {
         const effectivePlanMode = this.settings.enablePlanMode && !options?.skipPlanMode;
         if (effectivePlanMode) {
             baseSystemPrompt += this.promptService.getPlanModeInstruction();
+        }
+        // Annotation Mode instruction: forces readFile of related setting files before writeFile/editFile
+        if (options?.annotationMode) {
+            baseSystemPrompt += this.promptService.getAnnotationModeInstruction();
         }
         const fileTree = await this.getProjectFileTree();
         const fullSystemPrompt = baseSystemPrompt + (fileTree ? `\n\n### Project File Tree (Always Available)\n\`\`\`\n${fileTree}\n\`\`\`\n` : "");

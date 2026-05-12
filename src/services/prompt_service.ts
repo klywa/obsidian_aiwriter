@@ -156,6 +156,17 @@ export class PromptService {
     }
 
     /**
+     * Get annotation mode system instruction (appended when handling annotation revisions)
+     */
+    getAnnotationModeInstruction(): string {
+        if (!this.prompts) {
+            throw new Error('Prompts not loaded');
+        }
+
+        return this.getText(this.prompts.system.annotationModeInstruction);
+    }
+
+    /**
      * Get core writing behavior rules (always appended, not shown in settings UI)
      */
     getWritingRules(): string {

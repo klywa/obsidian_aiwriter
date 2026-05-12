@@ -237,7 +237,7 @@ export const AnnotationPanelComponent: React.FC<Props> = ({ plugin, view }) => {
                 </div>
                 <div className="voyaru-annotation-panel-empty">
                     <span>暂无批注</span>
-                    <span className="voyaru-annotation-panel-hint">选中文本后右键菜单可添加批注</span>
+                    <span className="voyaru-annotation-panel-hint">选中文本后通过菜单或命令添加批注</span>
                 </div>
             </div>
         );

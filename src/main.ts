@@ -95,6 +95,11 @@ export default class VoyaruPlugin extends Plugin {
 			setting.openTabById('voyaru-plugin');
 		});
 
+		// Ribbon Icon - Annotation Panel
+		this.addRibbonIcon('message-square', '打开批注面板', () => {
+			this.activateAnnotationView();
+		});
+
 		// Status Bar
 		const statusBarItemEl = this.addStatusBarItem();
 		statusBarItemEl.setText('Voyaru Active');
@@ -147,6 +152,15 @@ export default class VoyaruPlugin extends Plugin {
             callback: () => this.activateAnnotationView()
         });
 
+        // Editor Command: Add Annotation (支持手机端)
+        this.addCommand({
+            id: 'add-annotation',
+            name: '添加批注',
+            editorCallback: (editor: Editor, view: MarkdownView) => {
+                this.openAddAnnotationModal(editor, view);
+            }
+        });
+
         // Context Menu: Add to Context and Local Edit
         this.registerEvent(
             this.app.workspace.on("editor-menu", (menu: Menu, editor: Editor, view: MarkdownView) => {
@@ -197,27 +211,7 @@ export default class VoyaruPlugin extends Plugin {
                         item
                             .setTitle("添加批注")
                             .setIcon("message-square")
-                            .onClick(async () => {
-                                if (!file) return;
-                                new AddAnnotationModal(
-                                    this.app,
-                                    selection,
-                                    async (suggestion: string, type: 'local' | 'global') => {
-                                        try {
-                                            const vaultFile = this.app.vault.getAbstractFileByPath(file.path);
-                                            if (!vaultFile || !(vaultFile instanceof TFile)) return;
-                                            const content = await this.app.vault.read(vaultFile);
-                                            const updated = addAnnotationToText(content, type, selection, suggestion);
-                                            await this.app.vault.modify(vaultFile, updated);
-                                            new Notice('批注已添加');
-                                            // Auto-open annotation panel
-                                            await this.activateAnnotationView();
-                                        } catch (e: any) {
-                                            new Notice('添加批注失败: ' + e.message);
-                                        }
-                                    }
-                                ).open();
-                            });
+                            .onClick(() => this.openAddAnnotationModal(editor, view));
                     });
                 } else if (file) {
                     // 即使没有选中文本，也可以添加整个文件到上下文
@@ -461,7 +455,8 @@ export default class VoyaruPlugin extends Plugin {
             const contextAfter = lines.slice(endLine + 1, Math.min(lines.length, endLine + 6)).join('\n');
             
             // 使用 PromptService 构建 local edit 提示词
-            const baseSystemPrompt = this.aiService.getProcessedSystemPrompt();
+            // 使用 getFullSystemPrompt 以包含 WRITER.md / 风格指南 / 记忆索引等强制上下文
+            const baseSystemPrompt = await this.aiService.getFullSystemPrompt();
             const localEditSystemInstruction = this.promptService.getLocalEditSystemInstruction(baseSystemPrompt);
             const localEditUserMessage = this.promptService.getLocalEditUserMessage({
                 filePath,
@@ -700,4 +695,30 @@ export default class VoyaruPlugin extends Plugin {
             console.warn('AI Service not initialized when saving settings');
         }
 	}
+
+    private async openAddAnnotationModal(editor: Editor, view: MarkdownView) {
+        const selection = editor.getSelection();
+        const file = view.file;
+        if (!selection || !file) {
+            new Notice('请先选中要批注的文本');
+            return;
+        }
+        new AddAnnotationModal(
+            this.app,
+            selection,
+            async (suggestion: string, type: 'local' | 'global') => {
+                try {
+                    const vaultFile = this.app.vault.getAbstractFileByPath(file.path);
+                    if (!vaultFile || !(vaultFile instanceof TFile)) return;
+                    const content = await this.app.vault.read(vaultFile);
+                    const updated = addAnnotationToText(content, type, selection, suggestion);
+                    await this.app.vault.modify(vaultFile, updated);
+                    new Notice('批注已添加');
+                    await this.activateAnnotationView();
+                } catch (e: any) {
+                    new Notice('添加批注失败: ' + e.message);
+                }
+            }
+        ).open();
+    }
 }

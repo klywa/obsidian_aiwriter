@@ -61,6 +61,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const lastChunkTypeRef = useRef<string | null>(null); // 跟踪上一个chunk的类型（用于判断"文字→工具调用"的情况）
     const [planModeActive, setPlanModeActive] = useState<boolean>(plugin.settings.enablePlanMode);
     const skipPlanModeOnceRef = useRef<boolean>(false);
+    const annotationModeOnceRef = useRef<boolean>(false);
 
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -1170,7 +1171,12 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             console.log('Calling streamChat with history length:', historyForRequest.length, isSingleTurnMode ? '(single-turn mode)' : '');
             const skipPlanMode = skipPlanModeOnceRef.current;
             skipPlanModeOnceRef.current = false;
-            const stream = plugin.aiService.streamChat(currentSessionId, historyForRequest, messageContent, newUserMsg.referencedFiles, abortControllerRef.current.signal, undefined, skipPlanMode ? { skipPlanMode: true } : undefined);
+            const annotationMode = annotationModeOnceRef.current;
+            annotationModeOnceRef.current = false;
+            const streamOptions = (skipPlanMode || annotationMode)
+                ? { ...(skipPlanMode ? { skipPlanMode: true } : {}), ...(annotationMode ? { annotationMode: true } : {}) }
+                : undefined;
+            const stream = plugin.aiService.streamChat(currentSessionId, historyForRequest, messageContent, newUserMsg.referencedFiles, abortControllerRef.current.signal, undefined, streamOptions);
 
             let currentResponseId = `msg-${Date.now()}-response`;
             let currentResponseContent = ""; // Accumulate text for the current message ID
@@ -1598,6 +1604,8 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             const { message, filePath } = e.detail as { message: string; filePath: string };
             // Annotation revision always bypasses plan mode — user wants direct modification
             skipPlanModeOnceRef.current = true;
+            // Inject annotation mode system instruction (forces readFile of setting files before writeFile)
+            annotationModeOnceRef.current = true;
             handleSendMessage(message, [filePath]);
         };
         containerEl.addEventListener('voyaru-annotation-revision', handler as EventListener);

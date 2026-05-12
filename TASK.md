@@ -2,3 +2,7 @@
 - [x] 在插件设置页面及所有子页面（Modal）中禁用 ESC 键关闭
 - [ ] 记忆系统：基于 Markdown 的跨会话记忆（角色状态快照 + 变更日志、情节线、世界观），实现索引注入 + 渐进式揭露 + writeFile/editFile 后自动提取 + `#刷新记忆` 工具
 - [x] askUser 工具：AI 主动向用户提出结构化问题（含选项优劣分析、单选/多选、推荐标记），用户选择后以新消息形式注入上下文，AI 自动继续任务
+- [ ] 手机版 Obsidian 支持批注功能：新增 add-annotation editor command 与"打开批注面板" ribbon 图标，修正面板空状态提示文案为平台无关表述
+- [x] Plan 模式应用 plan 写正文时，强制 AI 在 writeFile 之前先 readFile 规划涉及的角色设定/大纲/世界观/风格指南文件
+- [x] 所有写作流程（直接编写 / 基于 plan / 基于批注修改）默认加载 WRITER.md + 风格指南；批注修改模式下额外强制读取相关设定文档
+- [x] 修复局部修改（performLocalEdit）路径未注入 WRITER.md / 风格指南的 bug
