@@ -62,7 +62,6 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const [planModeActive, setPlanModeActive] = useState<boolean>(plugin.settings.enablePlanMode);
     const skipPlanModeOnceRef = useRef<boolean>(false);
     const annotationModeOnceRef = useRef<boolean>(false);
-    const overrideModelOnceRef = useRef<string | null>(null);
 
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -1185,12 +1184,9 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             skipPlanModeOnceRef.current = false;
             const annotationMode = annotationModeOnceRef.current;
             annotationModeOnceRef.current = false;
-            const modelOverride = overrideModelOnceRef.current;
-            overrideModelOnceRef.current = null;
-            const streamOptions: { skipPlanMode?: boolean; annotationMode?: boolean; modelOverride?: string } = {};
-            if (skipPlanMode) streamOptions.skipPlanMode = true;
-            if (annotationMode) streamOptions.annotationMode = true;
-            if (modelOverride) streamOptions.modelOverride = modelOverride;
+            const streamOptions = (skipPlanMode || annotationMode)
+                ? { ...(skipPlanMode ? { skipPlanMode: true } : {}), ...(annotationMode ? { annotationMode: true } : {}) }
+                : undefined;
             const stream = plugin.aiService.streamChat(currentSessionId, historyForRequest, messageContent, newUserMsg.referencedFiles, abortControllerRef.current.signal, undefined, streamOptions);
 
             let currentResponseId = `msg-${Date.now()}-response`;
@@ -1621,9 +1617,6 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             skipPlanModeOnceRef.current = true;
             // Inject annotation mode system instruction (forces readFile of setting files before writeFile)
             annotationModeOnceRef.current = true;
-            if (model && model !== 'follow') {
-                overrideModelOnceRef.current = model;
-            }
             handleSendMessage(message, [filePath]);
         };
         containerEl.addEventListener('voyaru-annotation-revision', handler as EventListener);

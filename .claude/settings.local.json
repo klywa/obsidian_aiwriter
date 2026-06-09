@@ -23,7 +23,12 @@
       "Bash(npm run:*)",
       "Bash(grep -r \"规划模式\\\\|proposePlan\" src/*.ts src/**/*.ts)",
       "Bash(node /tmp/style_check.js)",
-      "Bash(echo \"EXIT:$?\")"
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(git check-ignore *)",
+      "Bash(git status *)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(git config *)",
+      "Bash(git commit *)"
     ]
   }
 }

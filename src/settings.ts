@@ -149,6 +149,7 @@ export interface VoyaruSettings {
 // Migration: On first load, settings will be populated from prompts.json if empty.
 
 export const MODELS = [
+  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash' },
   { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro (Thinking)' },
   { id: 'gemini-3-pro-preview', name: 'Gemini 3.0 Pro (Thinking)' },
   { id: 'gemini-3-flash-preview', name: 'Gemini 3.0 Flash (Fast & Thinking)' },
@@ -168,7 +169,7 @@ export const DEFAULT_SETTINGS: VoyaruSettings = {
             name: 'Google Gemini',
             apiKey: '',
             models: [],
-            selectedModel: 'gemini-3-pro-preview'
+            selectedModel: 'gemini-3.5-flash'
         }
     ],
     activeProviderId: 'default-gemini',
@@ -504,7 +505,7 @@ export class VoyaruSettingTab extends PluginSettingTab {
             const activeProvider = this.plugin.settings.providers?.find(
                 (p: any) => p.id === this.plugin.settings.activeProviderId
             );
-            const mainModelId = activeProvider?.selectedModel || 'gemini-3-pro-preview';
+            const mainModelId = activeProvider?.selectedModel || 'gemini-3.5-flash';
             const mainModelName = MODELS.find(m => m.id === mainModelId)?.name || mainModelId;
 
             new Setting(containerEl)
@@ -536,7 +537,7 @@ export class VoyaruSettingTab extends PluginSettingTab {
             const activeProvider2 = this.plugin.settings.providers?.find(
                 (p: any) => p.id === this.plugin.settings.activeProviderId
             );
-            const mainModelId2 = activeProvider2?.selectedModel || 'gemini-3-pro-preview';
+            const mainModelId2 = activeProvider2?.selectedModel || 'gemini-3.5-flash';
             const mainModelName2 = MODELS.find(m => m.id === mainModelId2)?.name || mainModelId2;
 
             new Setting(containerEl)

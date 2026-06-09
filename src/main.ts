@@ -11,6 +11,7 @@ import { EditorView } from '@codemirror/view';
 import { AnnotationView, VIEW_TYPE_ANNOTATION } from "./views/annotation_view";
 import { AddAnnotationModal } from "./modals/AddAnnotationModal";
 import { addAnnotationToText } from "./editor/annotation_parser";
+import { createAdapter } from "./services/adapters";
 
 export default class VoyaruPlugin extends Plugin {
 	settings: VoyaruSettings;
@@ -602,7 +603,7 @@ export default class VoyaruPlugin extends Plugin {
 				type: 'gemini',
 				name: 'Google Gemini',
 				apiKey: loadedData.apiKey,
-				selectedModel: loadedData.model || 'gemini-3-pro-preview',
+				selectedModel: loadedData.model || 'gemini-3.5-flash',
 				models: []
 			}];
 			loadedData.activeProviderId = loadedData.providers[0].id;
@@ -638,6 +639,14 @@ export default class VoyaruPlugin extends Plugin {
 			providers: loadedData.providers || DEFAULT_SETTINGS.providers,
 			activeProviderId: loadedData.activeProviderId || DEFAULT_SETTINGS.activeProviderId
 		};
+
+		// Gemini 模型列表为硬编码，缓存会随版本更新而陈旧；加载时刷新，保证新增模型自动出现
+		const geminiModels = await createAdapter('gemini', { apiKey: '', model: '' }).fetchAvailableModels();
+		for (const provider of this.settings.providers ?? []) {
+			if (provider.type === 'gemini') {
+				provider.models = geminiModels;
+			}
+		}
 	}
 
 	/**

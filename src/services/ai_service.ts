@@ -60,7 +60,7 @@ export class AIService {
                     type: 'gemini',
                     name: 'Gemini (Legacy)',
                     apiKey: this.settings.apiKey,
-                    selectedModel: this.settings.model || 'gemini-3-pro-preview'
+                    selectedModel: this.settings.model || 'gemini-3.5-flash'
                 };
             }
             return null;

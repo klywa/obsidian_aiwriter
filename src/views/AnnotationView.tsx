@@ -63,7 +63,7 @@ export const AnnotationPanelComponent: React.FC<Props> = ({ plugin, view }) => {
         const providers = plugin.settings.providers;
         const activeId = plugin.settings.activeProviderId;
         const provider = providers?.find((p: any) => p.id === activeId);
-        const modelId = provider?.selectedModel || 'gemini-3-pro-preview';
+        const modelId = provider?.selectedModel || 'gemini-3.5-flash';
         return MODELS.find(m => m.id === modelId)?.name || modelId;
     };
 
