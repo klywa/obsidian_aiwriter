@@ -11,7 +11,7 @@
 import { BASE_SYSTEM_PROMPT } from './system/base';
 import { JAILBREAK } from './system/jailbreak';
 import { STYLE_GUIDE_INSTRUCTION } from './system/style_guide_instruction';
-import { REFERENCE_MODE_INSTRUCTION } from './system/reference_mode';
+import { REFERENCE_MODE_INSTRUCTION, REFERENCED_FILES_HEADER, REFERENCED_FILES_FOOTER } from './system/reference_mode';
 import { PLAN_MODE_INSTRUCTION } from './system/plan_mode';
 import { ANNOTATION_MODE_INSTRUCTION } from './system/annotation_mode';
 import { WRITING_RULES } from './system/writing_rules';
@@ -39,6 +39,8 @@ export const DEFAULT_PROMPTS: PromptsConfig = {
         jailbreak: JAILBREAK,
         styleGuideInstruction: STYLE_GUIDE_INSTRUCTION,
         referenceModeInstruction: REFERENCE_MODE_INSTRUCTION,
+        referencedFilesHeader: REFERENCED_FILES_HEADER,
+        referencedFilesFooter: REFERENCED_FILES_FOOTER,
         planModeInstruction: PLAN_MODE_INSTRUCTION,
         annotationModeInstruction: ANNOTATION_MODE_INSTRUCTION,
         writingRules: WRITING_RULES

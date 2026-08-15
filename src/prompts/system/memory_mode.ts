@@ -7,7 +7,7 @@ export const MEMORY_MODE_INSTRUCTION: TemplateConfig = {
 
 \${memoryIndex}
 
-**使用说明**：索引中每行列出了记忆文件路径和一句话摘要。根据当前任务判断需要读取哪些文件——例如写涉及张三的章节时，先 readFile 张三的角色记忆文件和相关情节线文件。`,
+**使用说明**：索引中每行列出了记忆文件路径和一句话摘要。根据当前任务判断需要读取哪些文件，然后**在一次 \`readFile\` 调用中通过 paths 数组一次性读取全部**，禁止逐个调用——例如写涉及张三的章节时，调用 \`readFile({paths: ["记忆/角色/张三.md", "记忆/情节线/主线.md"]})\` 同时读取张三的角色记忆文件和相关情节线文件。`,
     en: null,
     template: true,
     variables: ['memoryIndex']

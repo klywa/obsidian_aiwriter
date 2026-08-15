@@ -5,6 +5,9 @@ import { Notice } from "obsidian";
 import { PromptService } from "./prompt_service";
 import { modelRegistry, getDefaultModelIdForProvider } from "./model_registry";
 
+/** readFile 单次调用最多读取的文件数，超出部分跳过并在结果中列出 */
+const MAX_READ_FILES = 20;
+
 export class AIService {
     private genAI: GoogleGenAI | null = null;
     private fs: FSService;
@@ -1024,7 +1027,7 @@ export class AIService {
         } else {
             // 路径引用模式：只发送文件路径，让模型自己用 readFile 工具读取
             if (referencedFiles.length > 0) {
-                contextContent = "\n📎 Referenced Files (use readFile tool to access):\n";
+                contextContent = this.promptService.getReferencedFilesHeader();
                 for (const fileRef of referencedFiles) {
                     // 检查是否包含行数区间
                     const match = fileRef.match(/^(.+):(\d+)-(\d+)$/);
@@ -1034,7 +1037,7 @@ export class AIService {
                         contextContent += `- ${fileRef}\n`;
                     }
                 }
-                contextContent += "\nPlease use the readFile tool to read the content of these files as needed.\n";
+                contextContent += this.promptService.getReferencedFilesFooter();
             }
         }
         
@@ -1705,7 +1708,35 @@ export class AIService {
                             });
                             continue;
                         } else if (name === "readFile") {
-                            output = await this.fs.readFile(toolArgs.path);
+                            // 批量读取：优先取 paths 数组；兼容旧的单个 path 参数
+                            const rawPaths: string[] = Array.isArray(toolArgs.paths)
+                                ? toolArgs.paths.filter((p: any) => typeof p === 'string' && p.trim())
+                                : (typeof toolArgs.path === 'string' && toolArgs.path.trim() ? [toolArgs.path] : []);
+
+                            // 保序去重，避免同一轮重复读取同一文件
+                            const uniquePaths = Array.from(new Set(rawPaths));
+
+                            if (uniquePaths.length === 0) {
+                                output = "Error: readFile 需要 paths 参数（字符串数组）。请传入至少一个文件路径，例如 readFile({paths: [\"角色/林昭.md\"]})。";
+                            } else {
+                                const accepted = uniquePaths.slice(0, MAX_READ_FILES);
+                                const skipped = uniquePaths.slice(MAX_READ_FILES);
+
+                                const results = await this.fs.readFiles(accepted);
+                                const sections = results.map(r =>
+                                    `===== FILE: ${r.path} =====\n` +
+                                    (r.error !== undefined ? `⚠️ 读取失败：${r.error}` : (r.content ?? ''))
+                                );
+
+                                output = sections.join('\n\n');
+                                if (skipped.length > 0) {
+                                    output += `\n\n⚠️ 以下 ${skipped.length} 个文件因超出单次 ${MAX_READ_FILES} 个上限未读取，请再次调用 readFile：\n`
+                                        + skipped.map(p => `- ${p}`).join('\n');
+                                }
+
+                                // 归一化 args，供下方共享尾部的 createToolResult / UI 使用
+                                toolArgs.paths = accepted;
+                            }
                         } else if (name === "deleteFile") {
                             await this.fs.deleteFile(toolArgs.path);
                             output = `File ${toolArgs.path} deleted successfully.`;

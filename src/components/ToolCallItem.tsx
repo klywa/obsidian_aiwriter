@@ -49,10 +49,23 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
 
         switch (message.tool) {
             case 'readFile': {
-                const path = args.path || 'unknown file';
-                if (isRunning || isPending) return `Reading ${path}...`;
-                if (isFailed) return `Failed to read ${path}`;
-                return `Read ${path}`;
+                // 批量读取：args.paths 为数组；兼容旧会话记录中的单个 args.path
+                const paths: string[] = Array.isArray(args.paths)
+                    ? args.paths
+                    : (args.path ? [args.path] : []);
+
+                if (paths.length <= 1) {
+                    const path = paths[0] || 'unknown file';
+                    if (isRunning || isPending) return `Reading ${path}...`;
+                    if (isFailed) return `Failed to read ${path}`;
+                    return `Read ${path}`;
+                }
+
+                if (isRunning || isPending) return `Reading ${paths.length} files...`;
+                if (isFailed) return `Failed to read ${paths.length} files`;
+                const preview = paths.slice(0, 3).join(', ');
+                const suffix = paths.length > 3 ? ` 等 ${paths.length} 个` : '';
+                return `Read ${paths.length} files: ${preview}${suffix}`;
             }
             case 'writeFile': {
                 const path = args.path || 'unknown file';
@@ -156,8 +169,14 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ message, onToggleExp
     // Get file path for file operations
     const getFilePath = (): string | null => {
         const args = message.toolData?.args || {};
-        if (message.tool === 'readFile' ||
-            message.tool === 'writeFile' ||
+        if (message.tool === 'readFile') {
+            // 仅单文件时提供跳转链接；批量读取无法指向单一文件
+            const paths: string[] = Array.isArray(args.paths)
+                ? args.paths
+                : (args.path ? [args.path] : []);
+            return paths.length === 1 ? (paths[0] ?? null) : null;
+        }
+        if (message.tool === 'writeFile' ||
             message.tool === 'editFile' ||
             message.tool === 'deleteFile') {
             return args.path || null;

@@ -41,21 +41,24 @@ export const FUNCTION_DEFINITIONS = {
     readFile: {
         name: "readFile",
         description: {
-            zh: "读取文件内容以获取上下文信息。",
-            en: "Read the content of a file to get context."
+            zh: "读取一个或多个文件的内容以获取上下文信息。\n\n**重要**：如果你需要读取多个文件，必须在**一次调用**中通过 paths 数组传入全部路径，禁止逐个调用 readFile。\n例如需要角色设定 + 大纲 + 风格指南时，应调用：\nreadFile({paths: [\"角色/林昭.md\", \"大纲/第三卷.md\", \"WRITER.md\"]})\n\n返回结果中每个文件以 `===== FILE: <路径> =====` 分隔。单次最多读取 20 个文件，超出部分会被跳过并在结果末尾列出。",
+            en: "Read the content of one or more files to get context. If you need multiple files, pass ALL paths in a SINGLE call via the paths array — never call readFile one file at a time. Each file in the result is delimited by `===== FILE: <path> =====`. Up to 20 files per call; extras are skipped and listed at the end."
         },
         parameters: {
             type: "OBJECT",
             properties: {
-                path: {
-                    type: "STRING",
+                paths: {
+                    type: "ARRAY",
+                    items: {
+                        type: "STRING"
+                    },
                     description: {
-                        zh: "文件路径",
-                        en: "The path to the file."
+                        zh: "要读取的文件路径数组。需要多个文件时一次性全部传入。",
+                        en: "Array of file paths to read. Pass all needed files at once."
                     }
                 }
             },
-            required: ["path"]
+            required: ["paths"]
         }
     },
     deleteFile: {
@@ -81,7 +84,7 @@ export const FUNCTION_DEFINITIONS = {
     editFile: {
         name: "editFile",
         description: {
-            zh: "对现有文件进行部分编辑。支持替换、插入、删除和追加操作。相比 writeFile 的全量覆盖，editFile 只需要提供修改部分的内容，大幅减少 token 消耗。\n\n**使用场景**:\n- 修改文件中的某些段落\n- 在文件特定位置插入新内容\n- 删除文件中的某些行\n- 在文件末尾追加内容\n\n**工作流程**:\n1. 先使用 readFile 读取文件内容，查看行号\n2. 确定要修改的行范围\n3. 调用 editFile 执行精确修改\n\n**重要提示**:行号从 1 开始计数 (第一行是 line 1)。",
+            zh: "对现有文件进行部分编辑。支持替换、插入、删除和追加操作。相比 writeFile 的全量覆盖，editFile 只需要提供修改部分的内容，大幅减少 token 消耗。\n\n**使用场景**:\n- 修改文件中的某些段落\n- 在文件特定位置插入新内容\n- 删除文件中的某些行\n- 在文件末尾追加内容\n\n**工作流程**:\n1. 先使用 readFile 读取文件内容，查看行号（若同时需要其他参考文件，请在同一次 readFile 调用的 paths 数组中一并传入）\n2. 确定要修改的行范围\n3. 调用 editFile 执行精确修改\n\n**重要提示**:行号从 1 开始计数 (第一行是 line 1)。",
             en: null
         },
         parameters: {

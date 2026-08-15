@@ -59,6 +59,8 @@ export interface PromptsConfig {
         jailbreak: OptionalPrompt;
         styleGuideInstruction: TemplateConfig;
         referenceModeInstruction: I18nText;
+        referencedFilesHeader: I18nText;
+        referencedFilesFooter: I18nText;
         planModeInstruction: I18nText;
         annotationModeInstruction: I18nText;
         writingRules: I18nText;

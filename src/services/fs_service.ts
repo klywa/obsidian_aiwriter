@@ -51,6 +51,22 @@ export class FSService {
         throw new Error(`File ${path} not found.`);
     }
 
+    /**
+     * Read multiple files concurrently.
+     * A failure on one file does not abort the batch — that entry carries `error` instead of `content`.
+     * @param paths - File paths to read
+     * @returns One result per input path, in the same order
+     */
+    async readFiles(paths: string[]): Promise<Array<{ path: string; content?: string; error?: string }>> {
+        return Promise.all(paths.map(async (p) => {
+            try {
+                return { path: p, content: await this.readFile(p) };
+            } catch (e) {
+                return { path: p, error: e instanceof Error ? e.message : String(e) };
+            }
+        }));
+    }
+
     async deleteFile(path: string) {
         const normalized = normalizePath(path);
         const file = this.app.vault.getAbstractFileByPath(normalized);

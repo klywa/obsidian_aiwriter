@@ -145,6 +145,30 @@ export class PromptService {
     }
 
     /**
+     * Get the header prepended to the referenced-file list injected into the
+     * user message when referenceMode === 'path'
+     */
+    getReferencedFilesHeader(): string {
+        if (!this.prompts) {
+            throw new Error('Prompts not loaded');
+        }
+
+        return this.getText(this.prompts.system.referencedFilesHeader);
+    }
+
+    /**
+     * Get the footer appended after the referenced-file list injected into the
+     * user message when referenceMode === 'path'
+     */
+    getReferencedFilesFooter(): string {
+        if (!this.prompts) {
+            throw new Error('Prompts not loaded');
+        }
+
+        return this.getText(this.prompts.system.referencedFilesFooter);
+    }
+
+    /**
      * Get plan mode system instruction (appended when plan mode is active)
      */
     getPlanModeInstruction(): string {
