@@ -6,7 +6,7 @@ if (!existsSync(distDir)) {
 }
 
 // Copy release files to dist folder
-const files = ['main.js', 'manifest.json', 'styles.css', 'prompts.json'];
+const files = ['main.js', 'manifest.json', 'styles.css', 'models.example.json'];
 for (const file of files) {
     copyFileSync(file, `${distDir}/${file}`);
     console.log(`✓ Copied ${file} to ${distDir}/`);

@@ -8,6 +8,7 @@ import {
     UnifiedStreamChunk,
     UnifiedToolCall
 } from "./base";
+import { BUILTIN_MODELS } from "../../models/builtin_models";
 
 export class GeminiAdapter extends BaseModelAdapter {
     private genAI: GoogleGenAI | null = null;
@@ -40,58 +41,9 @@ export class GeminiAdapter extends BaseModelAdapter {
     }
 
     async fetchAvailableModels(): Promise<ModelInfo[]> {
-        // Gemini的模型列表，API不提供动态获取，使用硬编码
-        return [
-            {
-                id: 'gemini-3.5-flash',
-                name: 'Gemini 3.5 Flash',
-                contextWindow: 1000000,
-                supportsFunctionCalling: true,
-                supportsStreaming: true
-            },
-            {
-                id: 'gemini-3.1-pro-preview',
-                name: 'Gemini 3.1 Pro (Thinking)',
-                contextWindow: 1000000,
-                supportsFunctionCalling: true,
-                supportsStreaming: true
-            },
-            {
-                id: 'gemini-3-pro-preview',
-                name: 'Gemini 3.0 Pro (Thinking)',
-                contextWindow: 1000000,
-                supportsFunctionCalling: true,
-                supportsStreaming: true
-            },
-            {
-                id: 'gemini-3-flash-preview',
-                name: 'Gemini 3.0 Flash (Fast & Thinking)',
-                contextWindow: 1000000,
-                supportsFunctionCalling: true,
-                supportsStreaming: true
-            },
-            {
-                id: 'gemini-2.5-flash',
-                name: 'Gemini 2.5 Flash',
-                contextWindow: 1000000,
-                supportsFunctionCalling: true,
-                supportsStreaming: true
-            },
-            {
-                id: 'gemini-2.0-flash-exp',
-                name: 'Gemini 2.0 Flash (Experimental)',
-                contextWindow: 1000000,
-                supportsFunctionCalling: true,
-                supportsStreaming: true
-            },
-            {
-                id: 'gemini-2.0-flash',
-                name: 'Gemini 2.0 Flash',
-                contextWindow: 1000000,
-                supportsFunctionCalling: true,
-                supportsStreaming: true
-            }
-        ];
+        // Gemini的模型列表，API不提供动态获取，使用内置列表
+        // 用户覆盖由调用方通过 modelRegistry.mergeInto('gemini', ...) 合并
+        return BUILTIN_MODELS.gemini;
     }
 
     private convertToGeminiMessages(messages: UnifiedMessage[]): Content[] {

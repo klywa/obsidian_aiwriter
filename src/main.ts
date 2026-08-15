@@ -11,7 +11,7 @@ import { EditorView } from '@codemirror/view';
 import { AnnotationView, VIEW_TYPE_ANNOTATION } from "./views/annotation_view";
 import { AddAnnotationModal } from "./modals/AddAnnotationModal";
 import { addAnnotationToText } from "./editor/annotation_parser";
-import { createAdapter } from "./services/adapters";
+import { modelRegistry, resolveProviderModels, MODELS_CONFIG_FILENAME } from "./services/model_registry";
 
 export default class VoyaruPlugin extends Plugin {
 	settings: VoyaruSettings;
@@ -22,6 +22,8 @@ export default class VoyaruPlugin extends Plugin {
     private localEditAbortController: AbortController | null = null;
     // 防止 saveSettings 写入 data.json 后触发自身的 vault modify 事件重新加载
     private _isSavingSettings: boolean = false;
+    // 合并 models.json 的 modify / raw 重复事件
+    private _modelReloadTimer: number | null = null;
 
     // Cached waiting messages from chapters (legacy, kept for compatibility)
     private cachedChapterSentences: string[] = [];
@@ -35,6 +37,9 @@ export default class VoyaruPlugin extends Plugin {
     private isWaitingQueueRefreshing: boolean = false;  // Prevent concurrent refreshes
 
 	async onload() {
+        // 必须先于 loadSettings —— loadSettings 末尾会用合并后的列表刷新 provider.models
+        await modelRegistry.load(this.app, this.manifest.dir || '');
+
 		await this.loadSettings();
 
         // Initialize Services
@@ -258,9 +263,64 @@ export default class VoyaruPlugin extends Plugin {
                 if (this.aiService) {
                     this.aiService.updateSettings(this.settings);
                 }
+            } else if (file.path === this.modelsConfigPath) {
+                this.scheduleModelConfigReload();
             }
         }));
+
+        // .obsidian/ 下的文件不一定触发 vault 的 modify 事件，
+        // 'raw' 是覆盖配置目录的（未公开）事件，作为热重载的主路径
+        this.registerEvent(
+            (this.app.vault as any).on('raw', (path: string) => {
+                if (path === this.modelsConfigPath) {
+                    this.scheduleModelConfigReload();
+                }
+            })
+        );
+
+        // 兜底：两个事件都没触发时可手动重载
+        this.addCommand({
+            id: 'reload-model-config',
+            name: '重新加载模型配置',
+            callback: async () => {
+                await this.reloadModelConfig();
+            }
+        });
 	}
+
+    /** 插件目录下模型配置文件的 vault 相对路径 */
+    private get modelsConfigPath(): string {
+        return `${this.manifest.dir}/${MODELS_CONFIG_FILENAME}`;
+    }
+
+    /**
+     * 合并同一次保存产生的多个事件。
+     * modify 和 raw 可能对同一次写入都触发，直接重载会重复弹两次 Notice。
+     */
+    private scheduleModelConfigReload(): void {
+        if (this._modelReloadTimer !== null) {
+            window.clearTimeout(this._modelReloadTimer);
+        }
+        this._modelReloadTimer = window.setTimeout(() => {
+            this._modelReloadTimer = null;
+            void this.reloadModelConfig();
+        }, 300);
+    }
+
+    /**
+     * 重新读取 models.json 并刷新所有依赖模型列表的地方。
+     * 由文件监听、手动命令和设置页按钮共用。
+     */
+    async reloadModelConfig(): Promise<void> {
+        await modelRegistry.load(this.app, this.manifest.dir || '');
+        this.refreshProviderModels();
+        if (this.aiService) {
+            await this.aiService.updateSettings(this.settings);
+        }
+        // 通知已打开的 ChatComponent / AnnotationView 重新渲染模型列表
+        window.dispatchEvent(new CustomEvent('voyaru-models-updated'));
+        new Notice('模型配置已重新加载');
+    }
 
     /**
      * Refresh waiting messages from chapter files (queue-based mechanism)
@@ -408,7 +468,12 @@ export default class VoyaruPlugin extends Plugin {
         if (this.localEditAbortController) {
             this.localEditAbortController.abort();
         }
-        
+        if (this._modelReloadTimer !== null) {
+            window.clearTimeout(this._modelReloadTimer);
+            this._modelReloadTimer = null;
+        }
+
+
         // 确保在插件卸载前保存所有sessions
         // 尝试从所有打开的chat view中获取sessions并保存
         try {
@@ -603,7 +668,7 @@ export default class VoyaruPlugin extends Plugin {
 				type: 'gemini',
 				name: 'Google Gemini',
 				apiKey: loadedData.apiKey,
-				selectedModel: loadedData.model || 'gemini-3.5-flash',
+				selectedModel: loadedData.model || modelRegistry.getDefaultModelId('gemini'),
 				models: []
 			}];
 			loadedData.activeProviderId = loadedData.providers[0].id;
@@ -640,12 +705,15 @@ export default class VoyaruPlugin extends Plugin {
 			activeProviderId: loadedData.activeProviderId || DEFAULT_SETTINGS.activeProviderId
 		};
 
-		// Gemini 模型列表为硬编码，缓存会随版本更新而陈旧；加载时刷新，保证新增模型自动出现
-		const geminiModels = await createAdapter('gemini', { apiKey: '', model: '' }).fetchAvailableModels();
+		// 内置模型列表会随版本更新而变化，且用户可能刚改过 models.json；
+		// 加载时刷新缓存，保证新增/覆盖的模型自动出现
+		this.refreshProviderModels();
+	}
+
+	/** 用「底表 + models.json 覆盖」刷新各 provider 缓存的模型列表。 */
+	private refreshProviderModels(): void {
 		for (const provider of this.settings.providers ?? []) {
-			if (provider.type === 'gemini') {
-				provider.models = geminiModels;
-			}
+			provider.models = resolveProviderModels(provider);
 		}
 	}
 

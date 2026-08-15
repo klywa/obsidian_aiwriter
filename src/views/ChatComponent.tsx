@@ -1,9 +1,10 @@
 import * as React from 'react';
-import { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { AIService } from '../services/ai_service';
 import { FSService } from '../services/fs_service';
 import { SendIcon, StopIcon, PlusIcon, CloseIcon, CopyIcon, FileIcon, EditIcon, RefreshIcon, SaveIcon, UserIcon, BotIcon, ThinkingIcon, ToolIcon, TrashIcon, CheckIcon, TextSizeIcon, LogIcon, ExportIcon, ArrowUpIcon, MentionIcon, ChevronDownIcon, MoreHorizontalIcon, ClockIcon } from '../components/Icons';
-import { Message, Session, MODELS, QueryHistoryItem, ProviderConfig, ModelInfo } from '../settings';
+import { Message, Session, QueryHistoryItem, ProviderConfig, ModelInfo } from '../settings';
+import { getActiveProviderModels } from '../services/model_registry';
 import { Notice, Menu, TFile, MarkdownView, Platform } from 'obsidian';
 import { ExportModal } from '../modals/ExportModal';
 import { LogModal } from '../modals/LogModal';
@@ -43,6 +44,17 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         () => getActiveProvider()?.selectedModel || plugin.settings.model || ''
     );
     const [showModelSelector, setShowModelSelector] = useState(false);
+    // Bumped when models.json is reloaded so the picker picks up new models
+    const [modelsVersion, setModelsVersion] = useState(0);
+    useEffect(() => {
+        const handler = () => setModelsVersion(v => v + 1);
+        window.addEventListener('voyaru-models-updated', handler);
+        return () => window.removeEventListener('voyaru-models-updated', handler);
+    }, []);
+    const availableModels = useMemo(
+        () => getActiveProviderModels(plugin.settings),
+        [modelsVersion, plugin.settings.activeProviderId]
+    );
     const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
     const [editingContent, setEditingContent] = useState<string>('');
     const [editingFiles, setEditingFiles] = useState<string[]>([]);
@@ -3145,10 +3157,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                 title="选择模型"
                             >
                                 <span>{(() => {
-                                    const activeProvider = getActiveProvider();
-                                    const providerModels = activeProvider?.models;
-                                    const found = providerModels?.find((m: ModelInfo) => m.id === selectedModel)
-                                        || MODELS.find(m => m.id === selectedModel);
+                                    const found = availableModels.find((m: ModelInfo) => m.id === selectedModel);
                                     return found?.name || selectedModel || '选择模型';
                                 })()}</span>
                                 <ChevronDownIcon size={12} />
@@ -3171,14 +3180,7 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                                     flexDirection: 'column',
                                     gap: '2px'
                                 }}>
-                                    {((() => {
-                                        const activeProvider = getActiveProvider();
-                                        const providerModels = activeProvider?.models;
-                                        const list: ModelInfo[] = (providerModels && providerModels.length > 0)
-                                            ? providerModels
-                                            : MODELS;
-                                        return list;
-                                    })()).map((model: ModelInfo) => (
+                                    {availableModels.map((model: ModelInfo) => (
                                         <div 
                                             key={model.id}
                                             onClick={async () => {

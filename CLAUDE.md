@@ -326,13 +326,38 @@ Key settings to understand when modifying the plugin:
 
 **Persistence**: Settings are automatically saved to `data.json` using Obsidian's `loadData()`/`saveData()` API with 200ms debounce (see `VoyaruPlugin.saveSettings()`).
 
-### Supported Gemini Models
+### Model List Management
 
-- `gemini-3-pro-preview` - Thinking mode (default)
-- `gemini-3-flash-preview` - Fast with thinking
-- `gemini-2.5-flash` - Standard fast model
+模型列表有**唯一来源**：`src/models/builtin_models.ts` 中的 `BUILTIN_MODELS`（按 provider type 分组）。
+新增内置模型只改这一处，**不要**再往 `settings.ts` 或各 adapter 里复制一份。
+（旧的 `MODELS` 常量和 adapter 内联列表已移除。）
 
-Models are defined in `MODELS` constant in `settings.ts`.
+用户可通过插件目录下的 `models.json` 增删/覆盖模型，无需更新插件：
+
+```json
+{
+  "gemini": [{ "id": "gemini-4-pro", "name": "Gemini 4 Pro", "default": true }],
+  "openai": [{ "id": "gpt-5", "name": "GPT-5" }]
+}
+```
+
+- **合并规则**：底表打底 → 相同 `id` 浅合并且保持原位置 → 新 `id` 按文件顺序插到最前
+- **底表**：`gemini` / `anthropic` 用 `BUILTIN_MODELS`；`openai` / `deepseek` / `custom` 用 `provider.models`（API 拉取缓存）
+- **容错**：文件缺失、JSON 损坏或结构非法 → 静默/Notice 提示后回退到底表
+- **热重载**：`models.json` 变化时自动重载（vault `modify` + 未公开的 `raw` 事件）；兜底有命令「重新加载模型配置」和设置页同名按钮
+- **模板**：`models.example.json`（随 release 分发，以 `_` 开头的 key 视为注释）
+
+**访问方式**：调用方一律用 `src/services/model_registry.ts` 的辅助函数，不要直接 import `BUILTIN_MODELS`：
+
+```typescript
+resolveProviderModels(provider)         // 某个 provider 的可选模型（底表 + 覆盖）
+getActiveProviderModels(settings)       // 当前激活 provider 的可选模型
+getActiveModelId(settings)              // 当前选中的模型 ID
+getDefaultModelIdForProvider(provider)  // 该 provider 的默认模型 ID
+modelRegistry.mergeInto(type, base)     // 在 API 拉取结果之上叠加用户覆盖
+```
+
+默认模型不要写字面量：静态上下文（如 `DEFAULT_SETTINGS`）用 `FALLBACK_MODEL_ID`，运行时用上面的 getter。
 
 ## Requirement Management Rules
 
@@ -392,6 +417,8 @@ Models are defined in `MODELS` constant in `settings.ts`.
 - **AI Service**: [src/services/ai_service.ts](src/services/ai_service.ts) - Gemini API integration (~1100 lines)
 - **Prompt Service**: [src/services/prompt_service.ts](src/services/prompt_service.ts) - Centralized prompt management (~300 lines)
 - **Prompts Directory**: [src/prompts/](src/prompts/) - 模块化 prompt 目录（index.ts 汇总，types.ts 定义接口）
+- **Builtin Models**: [src/models/builtin_models.ts](src/models/builtin_models.ts) - 内置模型列表唯一来源
+- **Model Registry**: [src/services/model_registry.ts](src/services/model_registry.ts) - models.json 加载与合并
 - **Chat UI**: [src/views/ChatComponent.tsx](src/views/ChatComponent.tsx) - Main React interface (2832 lines)
 - **Settings**: [src/settings.ts](src/settings.ts) - Settings interface and UI
 - **File System**: [src/services/fs_service.ts](src/services/fs_service.ts) - Vault file operations
@@ -451,6 +478,7 @@ Models are defined in `MODELS` constant in `settings.ts`.
    - ✅ `manifest.json` - Plugin metadata
    - ✅ `main.js` - Bundled plugin code (包含所有核心系统指令)
    - ✅ `styles.css` - Custom styling
+   - ✅ `models.example.json` - 模型配置模板（用户复制为 `models.json` 即可自定义模型）
 6. Update `versions.json` to map plugin version → minimum Obsidian version
 
 **注意**: 核心系统指令已硬编码在 `main.js` 中，用户只需更新 `main.js` 即可获得最新指令，无需额外下载 `prompts.json`。

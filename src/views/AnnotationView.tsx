@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type VoyaruPlugin from '../main';
 import type { AnnotationView } from './annotation_view';
-import { MODELS } from '../settings';
+import { getActiveProviderModels, getActiveModelId } from '../services/model_registry';
 import { parseAnnotations, removeAnnotationFromText, writeAnnotationBlock, addAnnotationToText } from '../editor/annotation_parser';
 import type { Annotation } from '../editor/annotation_parser';
 import { AnnotationCard } from '../components/AnnotationCard';
@@ -59,12 +59,22 @@ export const AnnotationPanelComponent: React.FC<Props> = ({ plugin, view }) => {
         () => plugin.settings.annotationRevisionModel || 'follow'
     );
 
+    // Bumped when models.json is reloaded so the dropdown picks up new models
+    const [modelsVersion, setModelsVersion] = useState(0);
+    useEffect(() => {
+        const handler = () => setModelsVersion(v => v + 1);
+        window.addEventListener('voyaru-models-updated', handler);
+        return () => window.removeEventListener('voyaru-models-updated', handler);
+    }, []);
+
+    const availableModels = React.useMemo(
+        () => getActiveProviderModels(plugin.settings),
+        [modelsVersion, plugin.settings.activeProviderId]
+    );
+
     const getCurrentMainModelName = (): string => {
-        const providers = plugin.settings.providers;
-        const activeId = plugin.settings.activeProviderId;
-        const provider = providers?.find((p: any) => p.id === activeId);
-        const modelId = provider?.selectedModel || 'gemini-3.5-flash';
-        return MODELS.find(m => m.id === modelId)?.name || modelId;
+        const modelId = getActiveModelId(plugin.settings);
+        return availableModels.find(m => m.id === modelId)?.name || modelId;
     };
 
     /**
@@ -320,7 +330,7 @@ export const AnnotationPanelComponent: React.FC<Props> = ({ plugin, view }) => {
                     title="选择用于批注修改的 AI 模型"
                 >
                     <option value="follow">跟随主模型 ({getCurrentMainModelName()})</option>
-                    {MODELS.map(m => (
+                    {availableModels.map(m => (
                         <option key={m.id} value={m.id}>{m.name}</option>
                     ))}
                 </select>

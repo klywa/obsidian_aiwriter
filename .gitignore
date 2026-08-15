@@ -21,6 +21,9 @@ main.js
 # Exclude user data (contains API keys and personal settings)
 data.json
 
+# Exclude user model overrides (models.example.json is the tracked template)
+models.json
+
 docs/*.md
 docs
 

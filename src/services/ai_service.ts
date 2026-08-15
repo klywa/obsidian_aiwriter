@@ -3,6 +3,7 @@ import { FSService } from "./fs_service";
 import { VoyaruSettings, DEFAULT_SETTINGS, ProviderConfig } from "../settings";
 import { Notice } from "obsidian";
 import { PromptService } from "./prompt_service";
+import { modelRegistry, getDefaultModelIdForProvider } from "./model_registry";
 
 export class AIService {
     private genAI: GoogleGenAI | null = null;
@@ -60,7 +61,7 @@ export class AIService {
                     type: 'gemini',
                     name: 'Gemini (Legacy)',
                     apiKey: this.settings.apiKey,
-                    selectedModel: this.settings.model || 'gemini-3.5-flash'
+                    selectedModel: this.settings.model || modelRegistry.getDefaultModelId('gemini')
                 };
             }
             return null;
@@ -70,8 +71,10 @@ export class AIService {
 
     private getCurrentModel(): string {
         const provider = this.getActiveProvider();
-        // 优先使用provider的selectedModel，其次使用旧字段model，最后使用默认值
-        return provider?.selectedModel || this.settings.model || 'gemini-2.0-flash';
+        // 优先使用provider的selectedModel，其次使用旧字段model，最后使用该 provider 的默认模型
+        return provider?.selectedModel
+            || this.settings.model
+            || getDefaultModelIdForProvider(provider ?? undefined);
     }
 
     private getModelForFeature(feature: 'memory' | 'reflection'): string {

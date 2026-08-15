@@ -1,6 +1,7 @@
 import { App, Setting, Notice } from "obsidian";
 import { ProviderConfig, ProviderType } from "../settings";
 import { createAdapter, ModelInfo, PROVIDER_NAMES } from "../services/adapters";
+import { modelRegistry } from "../services/model_registry";
 import { BaseModal } from "./BaseModal";
 
 export class ProviderConfigModal extends BaseModal {
@@ -202,7 +203,8 @@ export class ProviderConfigModal extends BaseModal {
             });
 
             await adapter.initClient();
-            const models = await adapter.fetchAvailableModels();
+            // 叠加用户在 models.json 中为该 provider 配置的覆盖/新增条目
+            const models = modelRegistry.mergeInto(this.config.type, await adapter.fetchAvailableModels());
 
             this.config.models = models;
 

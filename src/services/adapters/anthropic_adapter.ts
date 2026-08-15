@@ -6,6 +6,7 @@ import {
     UnifiedTool,
     UnifiedStreamChunk
 } from "./base";
+import { BUILTIN_MODELS } from "../../models/builtin_models";
 
 export class AnthropicAdapter extends BaseModelAdapter {
     private currentMessages: any[] = [];
@@ -37,51 +38,9 @@ export class AnthropicAdapter extends BaseModelAdapter {
     }
 
     async fetchAvailableModels(): Promise<ModelInfo[]> {
-        // Anthropic不提供动态模型列表API，使用硬编码
-        return [
-            {
-                id: 'claude-opus-4-20250514',
-                name: 'Claude Opus 4',
-                contextWindow: 200000,
-                supportsFunctionCalling: true,
-                supportsStreaming: true
-            },
-            {
-                id: 'claude-sonnet-4-20250514',
-                name: 'Claude Sonnet 4',
-                contextWindow: 200000,
-                supportsFunctionCalling: true,
-                supportsStreaming: true
-            },
-            {
-                id: 'claude-3-5-sonnet-20241022',
-                name: 'Claude 3.5 Sonnet',
-                contextWindow: 200000,
-                supportsFunctionCalling: true,
-                supportsStreaming: true
-            },
-            {
-                id: 'claude-3-5-haiku-20241022',
-                name: 'Claude 3.5 Haiku',
-                contextWindow: 200000,
-                supportsFunctionCalling: true,
-                supportsStreaming: true
-            },
-            {
-                id: 'claude-3-opus-20240229',
-                name: 'Claude 3 Opus',
-                contextWindow: 200000,
-                supportsFunctionCalling: true,
-                supportsStreaming: true
-            },
-            {
-                id: 'claude-3-haiku-20240307',
-                name: 'Claude 3 Haiku',
-                contextWindow: 200000,
-                supportsFunctionCalling: true,
-                supportsStreaming: true
-            }
-        ];
+        // Anthropic不提供动态模型列表API，使用内置列表
+        // 用户覆盖由调用方通过 modelRegistry.mergeInto('anthropic', ...) 合并
+        return BUILTIN_MODELS.anthropic;
     }
 
     private convertToClaudeTools(tools: UnifiedTool[]): any[] {

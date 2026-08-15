@@ -6,6 +6,8 @@ import { FolderSuggestModal } from "./components/FolderSuggest";
 import { FolderConfigModal } from "./modals/FolderConfigModal";
 import { ProviderConfigModal } from "./modals/ProviderConfigModal";
 import { ProviderType, ModelInfo, PROVIDER_NAMES } from "./services/adapters";
+import { getActiveProviderModels, getActiveModelId, MODELS_CONFIG_FILENAME } from "./services/model_registry";
+import { FALLBACK_MODEL_ID } from "./models/builtin_models";
 
 // Re-export types for convenience
 export type { ProviderType, ModelInfo };
@@ -148,13 +150,8 @@ export interface VoyaruSettings {
 // via PromptService. These constants are removed to avoid duplication.
 // Migration: On first load, settings will be populated from prompts.json if empty.
 
-export const MODELS = [
-  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash' },
-  { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro (Thinking)' },
-  { id: 'gemini-3-pro-preview', name: 'Gemini 3.0 Pro (Thinking)' },
-  { id: 'gemini-3-flash-preview', name: 'Gemini 3.0 Flash (Fast & Thinking)' },
-  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
-];
+// 模型列表已收敛到 src/models/builtin_models.ts，并可由插件目录下的 models.json 覆盖/追加。
+// 运行时请通过 getActiveProviderModels(settings) / modelRegistry.getModels(type) 获取。
 
 export const DEFAULT_SETTINGS: VoyaruSettings = {
     // 旧字段保留为可选（用于迁移）
@@ -169,7 +166,7 @@ export const DEFAULT_SETTINGS: VoyaruSettings = {
             name: 'Google Gemini',
             apiKey: '',
             models: [],
-            selectedModel: 'gemini-3.5-flash'
+            selectedModel: FALLBACK_MODEL_ID
         }
     ],
     activeProviderId: 'default-gemini',
@@ -323,6 +320,20 @@ export class VoyaruSettingTab extends PluginSettingTab {
                             await this.plugin.saveSettings();
                             this.display(); // 重新渲染
                         }).open();
+                    });
+            });
+
+        // 模型配置文件
+        new Setting(containerEl)
+            .setName('模型配置文件')
+            .setDesc(`在插件目录下创建 ${MODELS_CONFIG_FILENAME} 即可增加或覆盖可选模型，无需更新插件。保存后通常会自动生效；若未生效可点此手动重载。`)
+            .addButton(button => {
+                button
+                    .setButtonText('重新加载模型配置')
+                    .setIcon('refresh-cw')
+                    .onClick(async () => {
+                        await this.plugin.reloadModelConfig();
+                        this.display(); // 重新渲染以刷新各模型下拉
                     });
             });
 
@@ -502,18 +513,16 @@ export class VoyaruSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     }));
 
-            const activeProvider = this.plugin.settings.providers?.find(
-                (p: any) => p.id === this.plugin.settings.activeProviderId
-            );
-            const mainModelId = activeProvider?.selectedModel || 'gemini-3.5-flash';
-            const mainModelName = MODELS.find(m => m.id === mainModelId)?.name || mainModelId;
+            const availableModels = getActiveProviderModels(this.plugin.settings);
+            const mainModelId = getActiveModelId(this.plugin.settings);
+            const mainModelName = availableModels.find(m => m.id === mainModelId)?.name || mainModelId;
 
             new Setting(containerEl)
                 .setName('记忆归纳模型')
                 .setDesc('用于记忆归纳的 AI 模型。默认跟随主聊天模型。')
                 .addDropdown(dropdown => {
                     dropdown.addOption('follow', `跟随主模型 (${mainModelName})`);
-                    MODELS.forEach(m => dropdown.addOption(m.id, m.name));
+                    availableModels.forEach(m => dropdown.addOption(m.id, m.name));
                     dropdown.setValue(this.plugin.settings.memoryExtractionModel || 'follow');
                     dropdown.onChange(async (value) => {
                         this.plugin.settings.memoryExtractionModel = value;
@@ -534,18 +543,16 @@ export class VoyaruSettingTab extends PluginSettingTab {
                 }));
 
         if (this.plugin.settings.enableSelfEvolution) {
-            const activeProvider2 = this.plugin.settings.providers?.find(
-                (p: any) => p.id === this.plugin.settings.activeProviderId
-            );
-            const mainModelId2 = activeProvider2?.selectedModel || 'gemini-3.5-flash';
-            const mainModelName2 = MODELS.find(m => m.id === mainModelId2)?.name || mainModelId2;
+            const availableModels2 = getActiveProviderModels(this.plugin.settings);
+            const mainModelId2 = getActiveModelId(this.plugin.settings);
+            const mainModelName2 = availableModels2.find(m => m.id === mainModelId2)?.name || mainModelId2;
 
             new Setting(containerEl)
                 .setName('自进化模型')
                 .setDesc('用于写作经验反思（自进化）的 AI 模型。默认跟随主聊天模型。')
                 .addDropdown(dropdown => {
                     dropdown.addOption('follow', `跟随主模型 (${mainModelName2})`);
-                    MODELS.forEach(m => dropdown.addOption(m.id, m.name));
+                    availableModels2.forEach(m => dropdown.addOption(m.id, m.name));
                     dropdown.setValue(this.plugin.settings.writerReflectionModel || 'follow');
                     dropdown.onChange(async (value) => {
                         this.plugin.settings.writerReflectionModel = value;

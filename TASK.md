@@ -9,3 +9,4 @@
 - [x] Plan 模式应用 plan 写正文时，强制 AI 在 writeFile 之前先 readFile 规划涉及的角色设定/大纲/世界观/风格指南文件
 - [x] 所有写作流程（直接编写 / 基于 plan / 基于批注修改）默认加载 WRITER.md + 风格指南；批注修改模式下额外强制读取相关设定文档
 - [x] 修复局部修改（performLocalEdit）路径未注入 WRITER.md / 风格指南的 bug
+- [ ] 模型可扩展性：通过插件目录下的 `models.json` 配置可使用的模型，新模型发布后无需改代码、无需更新插件即可选用。内置列表收敛到 `src/models/builtin_models.ts` 单一来源（移除 `settings.ts` 的 `MODELS` 常量与各 adapter 内联列表）；`src/services/model_registry.ts` 负责加载与合并（底表打底、同 id 覆盖保持原位、新 id 追加到最前）；覆盖全部 provider（gemini/openai/anthropic/deepseek/custom）；文件缺失或格式非法时回退到内置列表并提示；改文件后热重载（vault `modify` + `raw` 事件），并提供命令「重新加载模型配置」与设置页按钮兜底；附带 `models.example.json` 模板随 release 分发
