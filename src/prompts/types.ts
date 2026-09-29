@@ -78,6 +78,9 @@ export interface PromptsConfig {
         systemInstruction: TemplateConfig;
         userMessage: TemplateConfig;
     };
+    annotation: {
+        revisionUserMessage: TemplateConfig;
+    };
     memory: {
         extractionSystemPrompt: TemplateConfig;
         extractionUserMessage: TemplateConfig;

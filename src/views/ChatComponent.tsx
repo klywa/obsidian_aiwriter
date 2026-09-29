@@ -5,7 +5,7 @@ import { FSService } from '../services/fs_service';
 import { SendIcon, StopIcon, PlusIcon, CloseIcon, CopyIcon, FileIcon, EditIcon, RefreshIcon, SaveIcon, UserIcon, BotIcon, ThinkingIcon, ToolIcon, TrashIcon, CheckIcon, TextSizeIcon, LogIcon, ExportIcon, ArrowUpIcon, MentionIcon, ChevronDownIcon, MoreHorizontalIcon, ClockIcon } from '../components/Icons';
 import { Message, Session, QueryHistoryItem, ProviderConfig, ModelInfo } from '../settings';
 import { getActiveProviderModels } from '../services/model_registry';
-import { Notice, Menu, TFile, MarkdownView, Platform } from 'obsidian';
+import { Notice, Menu, TFile, MarkdownView, Platform, normalizePath } from 'obsidian';
 import { ExportModal } from '../modals/ExportModal';
 import { LogModal } from '../modals/LogModal';
 import { HistoryPromptModal } from '../modals/HistoryPromptModal';
@@ -17,6 +17,7 @@ import { Toast } from '../components/Toast';
 import { WaitingMessage } from '../components/WaitingMessage';
 import { PlanCard } from '../components/PlanCard';
 import { AskUserCard } from '../components/AskUserCard';
+import { writeAnnotationBlock } from '../editor/annotation_parser';
 
 export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerEl?: HTMLElement }) => {
     const [sessions, setSessions] = useState<Session[]>([]);
@@ -74,6 +75,9 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
     const [planModeActive, setPlanModeActive] = useState<boolean>(plugin.settings.enablePlanMode);
     const skipPlanModeOnceRef = useRef<boolean>(false);
     const annotationModeOnceRef = useRef<boolean>(false);
+    // Path of the file whose annotations are being applied this turn (annotation revision flow).
+    // Used to clear the %%voyaru-annotations block once the AI has written the file back.
+    const annotationRevisionPathRef = useRef<string | null>(null);
 
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -1181,6 +1185,12 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
         // 将 fullLog 定义在 try 块外部，以便 catch 块也能访问
         let fullLog: any[] = [];
 
+        // 批注修改流程：记录目标文件，以及本轮是否真的写回了该文件。
+        // 只有写回成功才在 finally 中清空批注块，中断/报错时保留用户的批注。
+        const annotationRevisionPath = annotationRevisionPathRef.current;
+        annotationRevisionPathRef.current = null;
+        let annotationRevisionApplied = false;
+
         try {
             // 检查 aiService 是否存在
             if (!plugin.aiService) {
@@ -1411,6 +1421,13 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
                             return newMessages;
                         });
                     } else if (chunk.type === 'tool_result') {
+                        // 批注修改流程：AI 已把修改写回目标文件 → 允许在本轮结束后清空批注块
+                        if (annotationRevisionPath && (chunk.tool === 'writeFile' || chunk.tool === 'editFile')) {
+                            const writtenPath = (chunk.args || chunk.toolData?.args)?.path;
+                            if (typeof writtenPath === 'string' && normalizePath(writtenPath) === normalizePath(annotationRevisionPath)) {
+                                annotationRevisionApplied = true;
+                            }
+                        }
                         // 查找匹配的 running 状态消息
                         setMessages(prev => {
                             const runningMsgIndex = prev.findIndex(m =>
@@ -1616,7 +1633,35 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             // 注意：操作类消息执行期间显示等待消息的逻辑在chunk处理循环中（第1433行）
             console.log('[WaitingMessage] Response completed, hiding waiting message');
             setShowWaitingMessage(false);
+
+            // 批注修改成功写回后，由插件清空该文件的批注块（不依赖模型自觉）
+            if (annotationRevisionPath && annotationRevisionApplied) {
+                await clearAnnotationsAfterRevision(annotationRevisionPath);
+            }
             // 确保最终状态被保存（通过 useEffect 自动触发保存）
+        }
+    };
+
+    /**
+     * Remove the %%voyaru-annotations block after the AI has applied the annotations.
+     * The model is told not to echo the block back, but this is the authoritative cleanup —
+     * it also covers the case where the model copied the block into its rewritten content.
+     */
+    const clearAnnotationsAfterRevision = async (filePath: string) => {
+        try {
+            const file = plugin.app.vault.getAbstractFileByPath(normalizePath(filePath));
+            if (!(file instanceof TFile)) return;
+
+            const content = await plugin.app.vault.read(file);
+            const cleared = writeAnnotationBlock(content, []);
+            if (cleared === content) return; // No block present — nothing to do
+
+            await plugin.app.vault.modify(file, cleared);
+            plugin.forceAnnotationDecorationsRefresh(file.path);
+            new Notice('批注已应用并清空');
+        } catch (e) {
+            console.error('[AnnotationRevision] Failed to clear annotation block:', e);
+            new Notice('批注已应用，但清空批注块失败，请手动删除');
         }
     };
 
@@ -1627,8 +1672,11 @@ export const ChatComponent = ({ plugin, containerEl }: { plugin: any, containerE
             const { message, filePath, model } = e.detail as { message: string; filePath: string; model?: string };
             // Annotation revision always bypasses plan mode — user wants direct modification
             skipPlanModeOnceRef.current = true;
-            // Inject annotation mode system instruction (forces readFile of setting files before writeFile)
+            // Inject annotation mode system instruction (teaches the model to parse the
+            // in-file annotation block, and forces readFile of setting files before writeFile)
             annotationModeOnceRef.current = true;
+            // Remember the target so the annotation block can be cleared once it's written back
+            annotationRevisionPathRef.current = filePath;
             handleSendMessage(message, [filePath]);
         };
         containerEl.addEventListener('voyaru-annotation-revision', handler as EventListener);

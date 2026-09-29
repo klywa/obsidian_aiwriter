@@ -220,24 +220,16 @@ export const AnnotationPanelComponent: React.FC<Props> = ({ plugin, view }) => {
             return;
         }
         const chatLeaf = chatLeaves[0]!;
-        const localAnns = anns.filter(a => a.type === 'local');
-        const globalAnns = anns.filter(a => a.type === 'global');
 
-        let message = `请根据以下批注，对文件 @${filePath} 进行整体修改：\n\n`;
-        if (localAnns.length > 0) {
-            message += `**局部修改批注（${localAnns.length} 条）：**\n`;
-            localAnns.forEach((a, i) => {
-                message += `${i + 1}. 将"${a.target}"改为：${a.suggestion}\n`;
-            });
-            message += '\n';
-        }
-        if (globalAnns.length > 0) {
-            message += `**全文要求批注（${globalAnns.length} 条）：**\n`;
-            globalAnns.forEach((a, i) => {
-                message += `${i + 1}. ${a.suggestion}\n`;
-            });
-        }
-        message += '\n请综合所有批注，对文章进行修改并写回文件。';
+        // Send only the path and the counts. The annotation text (and the chapter text)
+        // stay in the file — the model is instructed to readFile and parse the
+        // %%voyaru-annotations block itself. Inlining 原文 + 逐条改写指令 here made
+        // requests prone to being blocked by the model's safety filters.
+        const message = plugin.promptService.getAnnotationRevisionUserMessage({
+            filePath,
+            localCount: anns.filter(a => a.type === 'local').length,
+            globalCount: anns.filter(a => a.type === 'global').length
+        });
 
         const event = new CustomEvent('voyaru-annotation-revision', {
             // Use settings value (not local state) — settings are the source of truth persisted to disk

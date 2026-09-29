@@ -973,8 +973,14 @@ export class AIService {
         if (effectivePlanMode) {
             baseSystemPrompt += this.promptService.getPlanModeInstruction();
         }
-        // Annotation Mode instruction: forces readFile of related setting files before writeFile/editFile
+        // Annotation Mode instruction: teaches the model to parse the in-file annotation
+        // block, and forces readFile of related setting files before writeFile/editFile
         if (options?.annotationMode) {
+            // Annotation mode always uses path references (see below), so the "📎 Referenced
+            // Files" explanation must be present even when the user's setting is 'content'.
+            if (this.settings.referenceMode !== 'path') {
+                baseSystemPrompt += this.promptService.getReferenceModeInstruction();
+            }
             baseSystemPrompt += this.promptService.getAnnotationModeInstruction();
         }
         const fileTree = await this.getProjectFileTree();
@@ -999,7 +1005,8 @@ export class AIService {
         // Prepare context based on reference mode
         let contextContent = "";
         
-        if (this.settings.referenceMode === 'content') {
+        // 批注模式强制走路径引用：正文绝不内联进 prompt，一律由模型自己 readFile 读取
+        if (this.settings.referenceMode === 'content' && !options?.annotationMode) {
             // 全文引用模式：直接读取并发送文件内容
         for (const fileRef of referencedFiles) {
             try {
@@ -1048,7 +1055,9 @@ export class AIService {
         // Filter out tools that are disabled in settings
         const filteredDeclarations = functionDeclarations
             .filter(fd => fd.name !== 'editFile' || this.settings.enableEditFileTool)
-            .filter(fd => fd.name !== 'proposePlan' || effectivePlanMode);
+            .filter(fd => fd.name !== 'proposePlan' || effectivePlanMode)
+            // 应用批注的这一轮里不应再新增批注：写回成功后插件会清空批注块，新增的会被一并抹掉
+            .filter(fd => fd.name !== 'addAnnotation' || !options?.annotationMode);
 
         const tools: Tool[] = [
             {

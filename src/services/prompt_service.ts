@@ -28,6 +28,16 @@ export interface LocalEditParams {
 }
 
 /**
+ * Parameters for the annotation revision user message.
+ * Only metadata — the annotation text itself is never passed through here.
+ */
+export interface AnnotationRevisionParams {
+    filePath: string;
+    localCount: number;
+    globalCount: number;
+}
+
+/**
  * Service for managing AI prompts from prompts.json
  * Handles loading, parsing, template substitution, and i18n
  */
@@ -411,6 +421,24 @@ export class PromptService {
             contextBefore: params.contextBefore,
             contextAfter: params.contextAfter,
             query: params.query
+        });
+    }
+
+    /**
+     * Get the user message for an annotation-based revision.
+     * Deliberately carries only the path and the counts — the annotation text and
+     * the chapter text stay in the file, to be read by the model via readFile.
+     */
+    getAnnotationRevisionUserMessage(params: AnnotationRevisionParams): string {
+        if (!this.prompts) {
+            throw new Error('Prompts not loaded');
+        }
+
+        const template = this.getText(this.prompts.annotation.revisionUserMessage);
+        return this.substituteTemplate(template, {
+            filePath: params.filePath,
+            localCount: params.localCount,
+            globalCount: params.globalCount
         });
     }
 

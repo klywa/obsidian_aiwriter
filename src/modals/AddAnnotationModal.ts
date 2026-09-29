@@ -8,7 +8,7 @@ export class AddAnnotationModal extends Modal {
     private selectedText: string;
     private onSubmit: (suggestion: string, type: 'local' | 'global') => void;
     private suggestionValue = '';
-    private typeValue: 'local' | 'global' = 'local';
+    private typeValue: 'local' | 'global' = 'global';
 
     constructor(
         app: App,

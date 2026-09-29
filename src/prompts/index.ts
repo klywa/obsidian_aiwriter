@@ -25,6 +25,7 @@ import { POST_CHECK_USER_MESSAGE } from './post_check/user_message';
 import { DEFAULT_POST_CHECK_ITEMS } from './post_check/default_items';
 import { LOCAL_EDIT_SYSTEM_INSTRUCTION } from './local_edit/system_instruction';
 import { LOCAL_EDIT_USER_MESSAGE } from './local_edit/user_message';
+import { ANNOTATION_REVISION_USER_MESSAGE } from './annotation/revision_user_message';
 import { MEMORY_EXTRACTION_SYSTEM_PROMPT } from './memory/extraction_system';
 import { MEMORY_EXTRACTION_USER_MESSAGE } from './memory/extraction_user_message';
 import { MEMORY_MODE_INSTRUCTION } from './system/memory_mode';
@@ -57,6 +58,9 @@ export const DEFAULT_PROMPTS: PromptsConfig = {
     localEdit: {
         systemInstruction: LOCAL_EDIT_SYSTEM_INSTRUCTION,
         userMessage: LOCAL_EDIT_USER_MESSAGE
+    },
+    annotation: {
+        revisionUserMessage: ANNOTATION_REVISION_USER_MESSAGE
     },
     memory: {
         extractionSystemPrompt: MEMORY_EXTRACTION_SYSTEM_PROMPT,
