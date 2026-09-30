@@ -2951,6 +2951,90 @@ Design Tokens are imported first to establish the design system foundation.
 }
 
 /* AddAnnotationModal */
+.modal-container.voyaru-annotation-mobile-container {
+    position: fixed;
+    top: var(--voyaru-viewport-top, 0px);
+    bottom: auto;
+    height: var(--voyaru-viewport-height, 100dvh);
+    box-sizing: border-box;
+    padding: 12px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    align-items: center;
+    justify-content: center;
+}
+
+.voyaru-annotation-mobile-container .modal.voyaru-annotation-dialog {
+    margin: 0;
+}
+
+.modal.voyaru-annotation-dialog {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-height: calc(var(--voyaru-viewport-height, 100dvh) - 32px - env(safe-area-inset-bottom, 0px));
+    overflow: hidden;
+}
+
+.voyaru-annotation-dialog .voyaru-add-annotation-modal {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.voyaru-add-annotation-modal > h3,
+.voyaru-add-annotation-modal > .voyaru-annotation-modal-buttons {
+    flex-shrink: 0;
+}
+
+.voyaru-annotation-modal-body {
+    min-height: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+.voyaru-add-annotation-modal .voyaru-annotation-suggestion-input {
+    min-height: 64px;
+    max-height: max(64px, calc(var(--voyaru-viewport-height, 100dvh) * 0.3));
+    overflow-y: auto;
+}
+
+.voyaru-add-annotation-modal .voyaru-annotation-modal-buttons {
+    padding-top: 12px;
+    flex-wrap: wrap;
+}
+
+@media (max-width: 600px) {
+    .modal.voyaru-annotation-dialog {
+        width: 100%;
+        max-width: 100%;
+        padding: 16px;
+    }
+
+    .voyaru-add-annotation-modal .setting-item {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .voyaru-add-annotation-modal .setting-item-control {
+        padding: 0;
+        max-width: 100%;
+    }
+
+    .voyaru-add-annotation-modal .setting-item-info {
+        min-width: 0;
+    }
+
+    .voyaru-add-annotation-modal .voyaru-annotation-suggestion-input {
+        font-size: max(16px, 1em);
+        resize: none;
+    }
+}
+
 .voyaru-add-annotation-modal .voyaru-annotation-target-preview {
     padding: 8px 10px;
     background: var(--background-secondary);
